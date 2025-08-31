@@ -70,7 +70,7 @@ def main():
     args = parser.parse_args()
     result_dir = os.path.join(args.in_dir, "results")
     
-    test_file = r"data\app-benchv2.jsonl"
+    test_file = "data/test.jsonl"
     test_datas = load_jsonl(test_file)
     total = 0
     for data in test_datas:

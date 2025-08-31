@@ -92,8 +92,8 @@ def main():
             print(f"interact_messages.json not found in {task}, skipping...")
             continue
         
-        index = int(task.replace("taskworkspace_", "").split("_")[0])
-        sub_index = int(task.replace("taskworkspace_", "").split("_")[1])
+        index = int(task.replace("task", "").split("_")[0]) - 1
+        sub_index = int(task.replace("task", "").split("_")[1])
         cat = test_datas[index]["Category"]["primary_category"]
         task_cat = test_datas[index]["ui_instruct"][sub_index]["task_category"]["primary_category"]
         
