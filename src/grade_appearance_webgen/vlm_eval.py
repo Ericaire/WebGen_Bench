@@ -8,19 +8,16 @@ import openai
 from openai import OpenAI
 
 openai_client = OpenAI(
-    # put your OpenAI / proxied key here or read from env
-    api_key=os.getenv("OPENAI_API_KEY", "sk-TjuuHBy4oQhNK0zZHYZx7Z53UOimglBqvA22H4n128D06f3403374a718530D1C09f106bE1"),
-    # if you use a proxy such as https://platform.llmprovider.ai
-    base_url=os.getenv("OPENAI_BASE_URL", "https://platform.llmprovider.ai/v1"),
+    api_key="API_KEY",  
+    base_url="https://BASE_URL/v1"
 )
 
 # --- Anthropic (Claude) ------------------------------------------------------
 import anthropic
 
 anthropic_client = anthropic.Anthropic(
-    # export ANTHROPIC_API_KEY="..."
-    api_key="sk-TjuuHBy4oQhNK0zZHYZx7Z53UOimglBqvA22H4n128D06f3403374a718530D1C09f106bE1",
-    base_url="https://platform.llmprovider.ai"
+    api_key="API_KEY",  
+    base_url="https://BASE_URL/v1"
 )
 
 # -----------------------------------------------------------------------------
