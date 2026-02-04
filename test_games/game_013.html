@@ -1,0 +1,483 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precision Drop</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --ui-color: #e94560;
+            --text-color: #ffffff;
+            --accent-color: #0f3460;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* UI Layer */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .hud {
+            display: flex;
+            justify-content: space-between;
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--text-color);
+            text-shadow: 2px 2px 0px #000;
+        }
+
+        /* Overlay Screens (Start, Game Over) */
+        #menu-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-color);
+            z-index: 10;
+            backdrop-filter: blur(5px);
+        }
+
+        h1 {
+            font-size: 4rem;
+            margin: 0 0 20px 0;
+            color: var(--ui-color);
+            text-transform: uppercase;
+            letter-spacing: 5px;
+            text-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+        }
+
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            max-width: 500px;
+            text-align: center;
+            line-height: 1.5;
+        }
+
+        button {
+            pointer-events: auto;
+            background-color: var(--ui-color);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: transform 0.1s, box-shadow 0.1s;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            text-transform: uppercase;
+        }
+
+        button:hover {
+            transform: scale(1.05);
+            background-color: #ff5775;
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        #message {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            font-weight: bold;
+        }
+
+        .controls-hint {
+            margin-top: 20px;
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Overlay -->
+    <div id="ui-layer">
+        <div class="hud">
+            <div id="score-display">Score: 0</div>
+            <div id="level-display">Level: 1</div>
+        </div>
+    </div>
+
+    <!-- Menus -->
+    <div id="menu-overlay">
+        <h1 id="title">Precision Drop</h1>
+        <div id="message"></div>
+        <p id="description">Wait for the platform to align.<br>Click anywhere or press Space to cut the thread.</p>
+        <button id="action-btn">Start Game</button>
+        <div class="controls-hint">Controls: Mouse Click / Spacebar / Tap</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        /**
+         * PRECISION DROP
+         * A vanilla JS physics game.
+         */
+
+        // --- Configuration & Constants ---
+        const CONSTANTS = {
+            GRAVITY: 0.5,
+            BALL_RADIUS: 15,
+            THREAD_COLOR: '#ffffff',
+            BALL_COLOR: '#e94560',
+            PLATFORM_COLOR: '#4ecca3',
+            BG_COLOR: '#1a1a2e',
+            PARTICLE_COUNT: 30
+        };
+
+        // --- Game State ---
+        const state = {
+            screen: 'START', // START, PLAYING, LEVEL_END, GAMEOVER
+            level: 1,
+            score: 0,
+            width: window.innerWidth,
+            height: window.innerHeight,
+            frames: 0
+        };
+
+        // --- Entities ---
+        let ball = {
+            x: 0,
+            y: 0,
+            vy: 0,
+            isFalling: false,
+            isLanded: false
+        };
+
+        let platform = {
+            x: 0,
+            y: 0,
+            width: 150,
+            height: 20,
+            speed: 5,
+            direction: 1 // 1 for right, -1 for left
+        };
+
+        let particles = [];
+
+        // --- DOM Elements ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const menuOverlay = document.getElementById('menu-overlay');
+        const actionBtn = document.getElementById('action-btn');
+        const titleEl = document.getElementById('title');
+        const msgEl = document.getElementById('message');
+        const scoreEl = document.getElementById('score-display');
+        const levelEl = document.getElementById('level-display');
+
+        // --- Initialization ---
+        function resize() {
+            state.width = window.innerWidth;
+            state.height = window.innerHeight;
+            canvas.width = state.width;
+            canvas.height = state.height;
+            
+            // Reposition if resized during wait
+            if (!ball.isFalling && !ball.isLanded) {
+                ball.x = state.width / 2;
+            }
+            platform.y = state.height - 100;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- Level System ---
+        function setupLevel(lvl) {
+            ball.x = state.width / 2;
+            ball.y = 150; // Hanging length
+            ball.vy = 0;
+            ball.isFalling = false;
+            ball.isLanded = false;
+
+            // Platform config based on level
+            platform.y = state.height - 100;
+            // Determine random start direction
+            platform.direction = Math.random() > 0.5 ? 1 : -1;
+            
+            // Difficulty scaling
+            // Level 1: Wide platform, Slow speed
+            // Level 3+: Narrow platform, Fast speed
+            const difficultyMultiplier = Math.min(lvl, 10); // Cap at level 10 scaling
+            
+            platform.width = Math.max(50, 160 - (difficultyMultiplier * 10)); 
+            platform.speed = 3 + (difficultyMultiplier * 1.5);
+            
+            // Random start X for platform to prevent rhythm memorization
+            platform.x = Math.random() * (state.width - platform.width);
+
+            particles = []; // Clear old particles
+        }
+
+        // --- Game Logic ---
+
+        function startGame() {
+            state.level = 1;
+            state.score = 0;
+            state.screen = 'PLAYING';
+            updateHUD();
+            setupLevel(state.level);
+            menuOverlay.classList.add('hidden');
+            gameLoop();
+        }
+
+        function cutThread() {
+            if (state.screen === 'PLAYING' && !ball.isFalling) {
+                ball.isFalling = true;
+            } else if (state.screen === 'LEVEL_END') {
+                nextLevel();
+            } else if (state.screen === 'GAMEOVER') {
+                startGame();
+            }
+        }
+
+        function nextLevel() {
+            state.level++;
+            state.screen = 'PLAYING';
+            menuOverlay.classList.add('hidden');
+            updateHUD();
+            setupLevel(state.level);
+            gameLoop(); // Restart loop if it stopped
+        }
+
+        function gameOver() {
+            state.screen = 'GAMEOVER';
+            titleEl.innerText = "Game Over";
+            titleEl.style.color = "#e94560";
+            msgEl.innerText = `Final Score: ${state.score}`;
+            actionBtn.innerText = "Try Again";
+            menuOverlay.classList.remove('hidden');
+        }
+
+        function levelComplete() {
+            state.screen = 'LEVEL_END';
+            state.score += 100 + (state.level * 10);
+            updateHUD();
+            
+            // Trigger confetti
+            createExplosion(ball.x, ball.y, '#4ecca3');
+            
+            // Small delay before showing menu
+            setTimeout(() => {
+                titleEl.innerText = "Perfect!";
+                titleEl.style.color = "#4ecca3";
+                msgEl.innerText = `Level ${state.level} Complete`;
+                actionBtn.innerText = "Next Level";
+                menuOverlay.classList.remove('hidden');
+            }, 800);
+        }
+
+        function updateHUD() {
+            scoreEl.innerText = `Score: ${state.score}`;
+            levelEl.innerText = `Level: ${state.level}`;
+        }
+
+        // --- Physics & Updates ---
+
+        function update() {
+            // Move Platform
+            if (state.screen === 'PLAYING') {
+                platform.x += platform.speed * platform.direction;
+
+                // Bounce off walls
+                if (platform.x <= 0) {
+                    platform.x = 0;
+                    platform.direction *= -1;
+                } else if (platform.x + platform.width >= state.width) {
+                    platform.x = state.width - platform.width;
+                    platform.direction *= -1;
+                }
+            }
+
+            // Move Ball
+            if (ball.isFalling && !ball.isLanded) {
+                ball.vy += CONSTANTS.GRAVITY;
+                ball.y += ball.vy;
+
+                // Collision Detection: Platform
+                // Check Y intersection
+                if (ball.y + CONSTANTS.BALL_RADIUS >= platform.y && 
+                    ball.y - CONSTANTS.BALL_RADIUS <= platform.y + platform.height) {
+                    
+                    // Check X intersection (simple AABB logic mostly)
+                    // We allow the ball to be slightly off-center but center point must be on platform
+                    if (ball.x >= platform.x && ball.x <= platform.x + platform.width) {
+                        // HIT!
+                        ball.y = platform.y - CONSTANTS.BALL_RADIUS; // Snap to top
+                        ball.isLanded = true;
+                        ball.vy = 0;
+                        levelComplete();
+                    }
+                }
+
+                // Collision Detection: Floor (Game Over)
+                if (ball.y - CONSTANTS.BALL_RADIUS > state.height) {
+                    gameOver();
+                }
+            }
+
+            // Update Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2; // Gravity for particles
+                p.life -= 0.02;
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        // --- Rendering ---
+
+        function draw() {
+            // Clear Screen
+            ctx.fillStyle = CONSTANTS.BG_COLOR;
+            ctx.fillRect(0, 0, state.width, state.height);
+
+            // Draw Thread (if not falling)
+            if (!ball.isFalling) {
+                ctx.beginPath();
+                ctx.moveTo(state.width / 2, 0);
+                ctx.lineTo(ball.x, ball.y);
+                ctx.strokeStyle = CONSTANTS.THREAD_COLOR;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]); // Dashed look
+                ctx.stroke();
+                ctx.setLineDash([]); // Reset
+            }
+
+            // Draw Platform
+            // Add a glow effect
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = CONSTANTS.PLATFORM_COLOR;
+            ctx.fillStyle = CONSTANTS.PLATFORM_COLOR;
+            ctx.beginPath();
+            ctx.roundRect(platform.x, platform.y, platform.width, platform.height, 5);
+            ctx.fill();
+            ctx.shadowBlur = 0; // Reset shadow
+
+            // Draw Ball
+            ctx.fillStyle = CONSTANTS.BALL_COLOR;
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, CONSTANTS.BALL_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Ball Shine (Fake 3D)
+            ctx.fillStyle = "rgba(255,255,255,0.3)";
+            ctx.beginPath();
+            ctx.arc(ball.x - 5, ball.y - 5, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw Particles
+            particles.forEach(p => {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.globalAlpha = 1.0;
+        }
+
+        function createExplosion(x, y, color) {
+            for (let i = 0; i < CONSTANTS.PARTICLE_COUNT; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10 - 5, // Upward bias
+                    life: 1.0,
+                    color: color,
+                    size: Math.random() * 4 + 1
+                });
+            }
+        }
+
+        // --- Main Loop ---
+        function gameLoop() {
+            if (state.screen === 'PLAYING' || state.screen === 'LEVEL_END' || particles.length > 0) {
+                update();
+                draw();
+                state.frames++;
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // --- Input Handling ---
+        actionBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent canvas click trigger immediately
+            if (state.screen === 'START' || state.screen === 'GAMEOVER') {
+                startGame();
+            } else if (state.screen === 'LEVEL_END') {
+                nextLevel();
+            }
+        });
+
+        // Global input for gameplay
+        function handleInput(e) {
+            // If overlay is active and we press space, trigger button logic
+            if (!menuOverlay.classList.contains('hidden')) {
+                if (e.type === 'keydown' && e.code === 'Space') {
+                    if (state.screen === 'START' || state.screen === 'GAMEOVER') startGame();
+                    else if (state.screen === 'LEVEL_END') nextLevel();
+                }
+                return;
+            }
+            
+            // Gameplay input
+            if ((e.type === 'mousedown' || e.type === 'touchstart' || (e.type === 'keydown' && e.code === 'Space'))) {
+                cutThread();
+            }
+        }
+
+        window.addEventListener('keydown', handleInput);
+        window.addEventListener('mousedown', handleInput);
+        window.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scrolling
+            handleInput(e);
+        }, { passive: false });
+
+        // First render
+        draw();
+
+    </script>
+</body>
+</html>

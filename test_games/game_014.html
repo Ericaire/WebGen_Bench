@@ -1,0 +1,825 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meteor Survival</title>
+    <style>
+        :root {
+            --primary: #00f3ff;
+            --danger: #ff0055;
+            --warning: #ffaa00;
+            --success: #00ff66;
+            --bg: #050510;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            user-select: none;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* HUD Layer */
+        #hud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        /* Top Left: Score & Timer */
+        .stat-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .score-display {
+            font-size: 2rem;
+            font-weight: 800;
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.5);
+        }
+
+        .difficulty-label {
+            font-size: 0.9rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Top Center: Integrity Bar */
+        .integrity-container {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            text-align: center;
+        }
+
+        .bar-label {
+            font-size: 0.8rem;
+            margin-bottom: 5px;
+            opacity: 0.8;
+            text-transform: uppercase;
+        }
+
+        .bar-bg {
+            width: 100%;
+            height: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        #integrity-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, var(--danger), var(--warning));
+            transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 10px var(--danger);
+        }
+
+        /* Bottom Left: Shield Circular HUD */
+        .shield-container {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .shield-ring {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: conic-gradient(var(--primary) 0%, rgba(255,255,255,0.1) 0%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 15px rgba(0, 243, 255, 0.2);
+            position: relative;
+        }
+
+        .shield-ring::before {
+            content: '';
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            background: var(--bg);
+            border-radius: 50%;
+        }
+
+        .shield-icon {
+            position: relative;
+            font-size: 1.5rem;
+            color: var(--primary);
+            z-index: 2;
+        }
+
+        /* Bottom Right: Powerup Timer */
+        #powerup-status {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            text-align: right;
+            display: none; /* Hidden by default */
+        }
+
+        .powerup-name {
+            font-size: 1.2rem;
+            color: var(--success);
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .powerup-bar-bg {
+            width: 150px;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            margin-top: 5px;
+            border-radius: 3px;
+        }
+
+        #powerup-bar-fill {
+            width: 100%;
+            height: 100%;
+            background: var(--success);
+            transform-origin: left;
+        }
+
+        /* Screens */
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 5, 16, 0.85);
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        h1 { font-size: 4rem; margin: 0; text-transform: uppercase; letter-spacing: 5px; color: var(--primary); text-shadow: 0 0 20px var(--primary); }
+        p { font-size: 1.2rem; color: #ccc; max-width: 600px; text-align: center; line-height: 1.6; }
+        
+        .btn {
+            margin-top: 30px;
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            background: transparent;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+            border-radius: 30px;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .btn:hover {
+            background: var(--primary);
+            color: var(--bg);
+            box-shadow: 0 0 20px var(--primary);
+        }
+
+        .hidden { display: none !important; }
+
+    </style>
+</head>
+<body>
+
+    <!-- HUD Layer -->
+    <div id="hud">
+        <div class="stat-group">
+            <div class="score-display" id="score-el">0</div>
+            <div class="difficulty-label">Wave <span id="wave-el">1</span></div>
+        </div>
+
+        <div class="integrity-container">
+            <div class="bar-label">Hull Integrity</div>
+            <div class="bar-bg">
+                <div id="integrity-fill"></div>
+            </div>
+        </div>
+
+        <div class="shield-container">
+            <div class="shield-ring" id="shield-ring">
+                <div class="shield-icon">🛡️</div>
+            </div>
+            <div>
+                <div style="font-size: 0.8rem; text-transform: uppercase; color: #aaa;">Shield System</div>
+                <div style="font-size: 1.2rem; font-weight: bold; color: var(--primary);" id="shield-text">100%</div>
+            </div>
+        </div>
+
+        <div id="powerup-status">
+            <div class="powerup-name" id="powerup-name">Rapid Fire</div>
+            <div class="powerup-bar-bg">
+                <div id="powerup-bar-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screens -->
+    <div id="start-screen">
+        <h1>Meteor Survival</h1>
+        <p>Pilot your ship through procedural asteroid fields.<br>Use <strong>WASD</strong> or <strong>Arrows</strong> to move. <strong>SPACE</strong> to shoot.</p>
+        <button class="btn" onclick="startGame()">Initialize Systems</button>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <h1 style="color: var(--danger); text-shadow: 0 0 20px var(--danger);">Critical Failure</h1>
+        <p>Final Score: <span id="final-score" style="color: white; font-weight: bold;">0</span></p>
+        <button class="btn" onclick="resetGame()">Reboot System</button>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        /**
+         * GAME ENGINE & LOGIC
+         * Pure JS, no frameworks.
+         */
+        
+        // --- Configuration ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Game State
+        const state = {
+            isPlaying: false,
+            score: 0,
+            wave: 1,
+            lastTime: 0,
+            difficultyMultiplier: 1.0,
+            gameOver: false,
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+        // Inputs
+        const keys = {
+            ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false,
+            w: false, s: false, a: false, d: false,
+            " ": false
+        };
+
+        // Entities
+        let player;
+        let bullets = [];
+        let meteors = [];
+        let particles = [];
+        let powerups = [];
+        
+        // Colors
+        const COLORS = {
+            ship: '#fff',
+            shipEngine: '#00f3ff',
+            bullet: '#ffaa00',
+            meteor: '#888',
+            shield: 'rgba(0, 243, 255, 0.3)',
+            powerupRapid: '#ff0055',
+            powerupShield: '#00ff66'
+        };
+
+        // --- Resize Handling ---
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            state.width = canvas.width;
+            state.height = canvas.height;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // --- Input Handling ---
+        window.addEventListener('keydown', e => keys[e.key] = true);
+        window.addEventListener('keyup', e => keys[e.key] = false);
+
+        // --- Classes ---
+
+        class Vector {
+            constructor(x, y) { this.x = x; this.y = y; }
+        }
+
+        class Player {
+            constructor() {
+                this.pos = new Vector(state.width / 2, state.height - 100);
+                this.vel = new Vector(0, 0);
+                this.acc = 0.8;
+                this.friction = 0.92;
+                this.maxSpeed = 8;
+                this.size = 20;
+                this.angle = -Math.PI / 2;
+                
+                // Stats
+                this.maxHp = 100;
+                this.hp = 100;
+                this.maxShield = 100;
+                this.shield = 100;
+                this.shieldRegenRate = 0.1;
+                this.shieldCooldown = 0; // Frames until regen starts
+                
+                // Weapons
+                this.lastShot = 0;
+                this.fireRate = 250; // ms
+                
+                // Powerups
+                this.activePowerup = null;
+                this.powerupTimer = 0;
+            }
+
+            update(dt) {
+                // Movement Logic
+                if (keys.ArrowUp || keys.w) this.vel.y -= this.acc;
+                if (keys.ArrowDown || keys.s) this.vel.y += this.acc;
+                if (keys.ArrowLeft || keys.a) this.vel.x -= this.acc;
+                if (keys.ArrowRight || keys.d) this.vel.x += this.acc;
+
+                // Physics
+                this.vel.x *= this.friction;
+                this.vel.y *= this.friction;
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+
+                // Boundaries
+                if (this.pos.x < this.size) this.pos.x = this.size;
+                if (this.pos.x > state.width - this.size) this.pos.x = state.width - this.size;
+                if (this.pos.y < this.size) this.pos.y = this.size;
+                if (this.pos.y > state.height - this.size) this.pos.y = state.height - this.size;
+
+                // Shooting
+                const now = Date.now();
+                if (keys[" "] && now - this.lastShot > this.fireRate) {
+                    this.shoot();
+                    this.lastShot = now;
+                }
+
+                // Shield Regen
+                if (this.shieldCooldown > 0) {
+                    this.shieldCooldown--;
+                } else if (this.shield < this.maxShield) {
+                    this.shield = Math.min(this.maxShield, this.shield + this.shieldRegenRate);
+                    updateHUD();
+                }
+
+                // Powerup Timer
+                if (this.activePowerup) {
+                    this.powerupTimer -= dt;
+                    if (this.powerupTimer <= 0) {
+                        this.deactivatePowerup();
+                    }
+                }
+            }
+
+            shoot() {
+                bullets.push(new Bullet(this.pos.x, this.pos.y - 20, -Math.PI/2));
+                // Recoil
+                this.vel.y += 1;
+            }
+
+            activatePowerup(type) {
+                this.activePowerup = type;
+                this.powerupTimer = 5000; // 5 seconds (in ms, approximated by update loop)
+
+                const ui = document.getElementById('powerup-status');
+                const nameEl = document.getElementById('powerup-name');
+                ui.style.display = 'block';
+
+                if (type === 'rapid') {
+                    this.fireRate = 80;
+                    nameEl.innerText = "RAPID FIRE";
+                    nameEl.style.color = COLORS.powerupRapid;
+                    document.getElementById('powerup-bar-fill').style.backgroundColor = COLORS.powerupRapid;
+                } else if (type === 'shield') {
+                    this.shield = this.maxShield;
+                    this.hp = Math.min(this.maxHp, this.hp + 20);
+                    // Instant effect, no duration really, but visual feedback is nice
+                    nameEl.innerText = "SHIELD RESTORE";
+                    nameEl.style.color = COLORS.powerupShield;
+                    document.getElementById('powerup-bar-fill').style.backgroundColor = COLORS.powerupShield;
+                    this.powerupTimer = 1000; 
+                }
+            }
+
+            deactivatePowerup() {
+                this.activePowerup = null;
+                this.fireRate = 250;
+                document.getElementById('powerup-status').style.display = 'none';
+            }
+
+            takeDamage(amount) {
+                this.shieldCooldown = 180; // 3 seconds at 60fps
+                
+                // Shield absorbs damage first
+                if (this.shield > 0) {
+                    this.shield -= amount;
+                    if (this.shield < 0) {
+                        this.hp += this.shield; // Overflow damage to hull
+                        this.shield = 0;
+                    }
+                } else {
+                    this.hp -= amount;
+                }
+
+                // Screen shake
+                ctx.translate(Math.random()*10 - 5, Math.random()*10 - 5);
+                setTimeout(() => ctx.setTransform(1, 0, 0, 1, 0, 0), 50);
+
+                updateHUD();
+
+                if (this.hp <= 0) {
+                    endGame();
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                
+                // Draw Ship
+                ctx.beginPath();
+                ctx.moveTo(0, -20);
+                ctx.lineTo(15, 20);
+                ctx.lineTo(0, 15);
+                ctx.lineTo(-15, 20);
+                ctx.closePath();
+                ctx.fillStyle = COLORS.ship;
+                ctx.fill();
+
+                // Engine Glow
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = COLORS.shipEngine;
+                ctx.beginPath();
+                ctx.moveTo(-5, 18);
+                ctx.lineTo(0, 35 + Math.random() * 10);
+                ctx.lineTo(5, 18);
+                ctx.fillStyle = COLORS.shipEngine;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Shield Visual
+                if (this.shield > 1) {
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 35, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(0, 243, 255, ${this.shield / this.maxShield * 0.6})`;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class Meteor {
+            constructor(x, y, sizeMultiplier) {
+                this.pos = new Vector(x, y);
+                this.size = (20 + Math.random() * 40) * sizeMultiplier;
+                this.speed = (2 + Math.random() * 3) * state.difficultyMultiplier;
+                this.angle = Math.random() * Math.PI * 2;
+                this.spin = (Math.random() - 0.5) * 0.1;
+                this.vel = new Vector(
+                    (Math.random() - 0.5) * 2,
+                    this.speed
+                );
+                
+                // Procedural Shape (Polygon)
+                this.vertices = [];
+                const numPoints = 6 + Math.floor(Math.random() * 6);
+                for(let i=0; i<numPoints; i++) {
+                    const r = this.size + (Math.random() - 0.5) * 10;
+                    const a = (i / numPoints) * Math.PI * 2;
+                    this.vertices.push({x: Math.cos(a) * r, y: Math.sin(a) * r});
+                }
+            }
+
+            update() {
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+                this.angle += this.spin;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                ctx.rotate(this.angle);
+                
+                ctx.beginPath();
+                ctx.moveTo(this.vertices[0].x, this.vertices[0].y);
+                for(let i=1; i<this.vertices.length; i++) {
+                    ctx.lineTo(this.vertices[i].x, this.vertices[i].y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = '#222';
+                ctx.strokeStyle = COLORS.meteor;
+                ctx.lineWidth = 2;
+                ctx.fill();
+                ctx.stroke();
+                
+                ctx.restore();
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, angle) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector(Math.cos(angle) * 15, Math.sin(angle) * 15);
+                this.radius = 3;
+            }
+
+            update() {
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI*2);
+                ctx.fillStyle = COLORS.bullet;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = COLORS.bullet;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        class Particle {
+            constructor(x, y, color) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
+                this.life = 1.0;
+                this.decay = 0.03 + Math.random() * 0.03;
+                this.color = color;
+                this.size = 2 + Math.random() * 3;
+            }
+
+            update() {
+                this.pos.x += this.vel.x;
+                this.pos.y += this.vel.y;
+                this.life -= this.decay;
+                this.size *= 0.95;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.size, 0, Math.PI*2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        class PowerUp {
+            constructor(x, y) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector(0, 2); // Drifts down
+                this.type = Math.random() > 0.5 ? 'rapid' : 'shield';
+                this.color = this.type === 'rapid' ? COLORS.powerupRapid : COLORS.powerupShield;
+                this.size = 15;
+                this.pulse = 0;
+            }
+
+            update() {
+                this.pos.y += this.vel.y;
+                this.pulse += 0.1;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                const scale = 1 + Math.sin(this.pulse) * 0.2;
+                ctx.scale(scale, scale);
+                
+                ctx.beginPath();
+                // Diamond shape
+                ctx.moveTo(0, -this.size);
+                ctx.lineTo(this.size, 0);
+                ctx.lineTo(0, this.size);
+                ctx.lineTo(-this.size, 0);
+                ctx.closePath();
+                
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = this.color;
+                ctx.fill();
+
+                // Letter
+                ctx.fillStyle = 'white';
+                ctx.shadowBlur = 0;
+                ctx.font = 'bold 12px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type === 'rapid' ? 'R' : 'S', 0, 0);
+
+                ctx.restore();
+            }
+        }
+
+        // --- Game Systems ---
+
+        function spawnManager() {
+            // Spawn Meteors
+            const spawnRate = 0.02 * state.difficultyMultiplier;
+            if (Math.random() < spawnRate) {
+                const x = Math.random() * state.width;
+                meteors.push(new Meteor(x, -50, 1));
+            }
+
+            // Spawn Powerups
+            if (Math.random() < 0.002) {
+                const x = Math.random() * (state.width - 40) + 20;
+                powerups.push(new PowerUp(x, -30));
+            }
+        }
+
+        function collisionManager() {
+            // Bullet vs Meteor
+            bullets.forEach((b, bIdx) => {
+                meteors.forEach((m, mIdx) => {
+                    const dist = Math.hypot(b.pos.x - m.pos.x, b.pos.y - m.pos.y);
+                    if (dist < m.size + b.radius) {
+                        // Destroy bullet
+                        bullets.splice(bIdx, 1);
+                        
+                        // Damage/Destroy meteor
+                        createExplosion(m.pos.x, m.pos.y, COLORS.meteor, 5);
+                        
+                        // Split or destroy
+                        meteors.splice(mIdx, 1);
+                        
+                        state.score += 100;
+                        updateScore();
+
+                        // Chance to spawn smaller meteors if big
+                        if (m.size > 30) {
+                            meteors.push(new Meteor(m.pos.x, m.pos.y, 0.5));
+                            meteors.push(new Meteor(m.pos.x, m.pos.y, 0.5));
+                        }
+                    }
+                });
+            });
+
+            // Player vs Meteor
+            meteors.forEach((m, mIdx) => {
+                const dist = Math.hypot(player.pos.x - m.pos.x, player.pos.y - m.pos.y);
+                if (dist < m.size + player.size - 5) { // -5 for leniency
+                    createExplosion(m.pos.x, m.pos.y, COLORS.shipEngine, 10);
+                    meteors.splice(mIdx, 1);
+                    player.takeDamage(25);
+                }
+            });
+
+            // Player vs Powerup
+            powerups.forEach((p, pIdx) => {
+                const dist = Math.hypot(player.pos.x - p.pos.x, player.pos.y - p.pos.y);
+                if (dist < p.size + player.size) {
+                    player.activatePowerup(p.type);
+                    powerups.splice(pIdx, 1);
+                    state.score += 50;
+                    updateScore();
+                }
+            });
+        }
+
+        function createExplosion(x, y, color, count) {
+            for(let i=0; i<count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        // --- HUD Functions ---
+
+        function updateHUD() {
+            // Integrity Bar
+            const integrityPct = Math.max(0, (player.hp / player.maxHp) * 100);
+            const integrityEl = document.getElementById('integrity-fill');
+            integrityEl.style.width = `${integrityPct}%`;
+            
+            // Color change based on health
+            if (integrityPct > 50) integrityEl.style.background = `linear-gradient(90deg, var(--warning), var(--success))`;
+            else integrityEl.style.background = `linear-gradient(90deg, var(--danger), var(--warning))`;
+
+            // Shield Circle
+            const shieldPct = Math.max(0, (player.shield / player.maxShield) * 100);
+            const shieldRing = document.getElementById('shield-ring');
+            shieldRing.style.background = `conic-gradient(var(--primary) ${shieldPct}%, rgba(255,255,255,0.1) ${shieldPct}%)`;
+            document.getElementById('shield-text').innerText = `${Math.floor(shieldPct)}%`;
+            
+            // Powerup Timer
+            if (player.activePowerup) {
+                const timerPct = (player.powerupTimer / 5000) * 100; // Assuming 5s base
+                document.getElementById('powerup-bar-fill').style.width = `${timerPct}%`;
+            }
+        }
+
+        function updateScore() {
+            document.getElementById('score-el').innerText = state.score.toLocaleString();
+        }
+
+        function updateDifficulty() {
+            // Increase difficulty every 10 seconds worth of frames (approx)
+            if (state.score > 0 && state.score % 500 === 0) {
+                 state.difficultyMultiplier += 0.1;
+                 state.wave++;
+                 document.getElementById('wave-el').innerText = state.wave;
+            }
+        }
+
+        // --- Core Loop ---
+
+        function gameLoop(timestamp) {
+            if (!state.isPlaying) return;
+            const dt = timestamp - state.lastTime;
+            state.lastTime = timestamp;
+
+            // Clear Screen
+            ctx.fillStyle = 'rgba(5, 5, 16, 0.4)'; // Trail effect
+            ctx.fillRect(0, 0, state.width, state.height);
+
+            // Update & Draw Player
+            player.update(dt);
+            player.draw();
+
+            // Spawn
+            spawnManager();
+
+            // Update Entities
+            bullets = bullets.filter(b => b.pos.y > -50);
+            bullets.forEach(b => { b.update(); b.draw(); });
+
+            meteors = meteors.filter(m => m.pos.y < state.height + 100);
+            meteors.forEach(m => { m.update(); m.draw(); });
+
+            powerups = powerups.filter(p => p.pos.y < state.height + 50);
+            powerups.forEach(p => { p.update(); p.draw(); });
+
+            particles = particles.filter(p => p.life > 0);
+            particles.forEach(p => { p.update(); p.draw(); });
+
+            // Collisions
+            collisionManager();
+
+            // Difficulty
+            updateDifficulty();
+
+            // Loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // --- Game Control ---
+
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.add('hidden');
+            
+            // Reset State
+            player = new Player();
+            bullets = [];
+            meteors = [];
+            particles = [];
+            powerups = [];
+            state.score = 0;
+            state.wave = 1;
+            state.difficultyMultiplier = 1.0;
+            state.gameOver = false;
+            state.isPlaying = true;
+            state.lastTime = performance.now();
+            
+            updateHUD();
+            updateScore();
+            document.getElementById('wave-el').innerText = "1";
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function endGame() {
+            state.isPlaying = false;
+            state.gameOver = true;
+            document.getElementById('game-over-screen').classList.remove('hidden');
+            document.getElementById('final-score').innerText = state.score.toLocaleString();
+        }
+
+        function resetGame() {
+            startGame();
+        }
+
+    </script>
+</body>
+</html>

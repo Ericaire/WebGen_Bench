@@ -131,9 +131,12 @@ def call_openai_compatible(client: OpenAI, messages: list, system: str, model: s
             response = client.chat.completions.create(
                 model=model,
                 messages=full_messages,
-                max_tokens=1000,
+                # max_tokens=1000,  # 不设置max_tokens，某些API设置后会返回None
             )
-            return response.choices[0].message.content
+            content = response.choices[0].message.content
+            if content is None:
+                raise ValueError("API返回content为None")
+            return content
         except Exception as e:
             print(f"API调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -282,6 +285,9 @@ def run_evaluation(url: str, task: str, expected: str, api_key: str,
     # 配置Chrome
     options = Options()
     options.add_argument("--window-size=1280,900")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     if headless:
         options.add_argument("--headless=new")
 
@@ -317,6 +323,7 @@ def run_evaluation(url: str, task: str, expected: str, api_key: str,
 """
 
         messages = []
+        interaction_history = []  # 保存详细交互历史
 
         for iteration in range(1, max_iter + 1):
             print(f"\n{'='*50}")
@@ -369,12 +376,22 @@ def run_evaluation(url: str, task: str, expected: str, api_key: str,
             action_type, action_data = parse_action(response)
             print(f"解析的动作: {action_type}, {action_data}")
 
+            # 记录交互历史
+            interaction_history.append({
+                "iteration": iteration,
+                "screenshot": f"screenshot_{iteration}.png",
+                "elements_info": text_info,
+                "model_response": response,
+                "action_type": action_type,
+                "action_data": str(action_data)
+            })
+
             if action_type == 'answer':
                 print(f"\n{'='*50}")
                 print(f"测试结果: {action_data}")
                 print('='*50)
 
-                # 保存结果
+                # 保存结果摘要
                 result = {
                     "url": url,
                     "task": task,
@@ -387,6 +404,15 @@ def run_evaluation(url: str, task: str, expected: str, api_key: str,
 
                 with open(os.path.join(output_dir, "result.json"), "w", encoding="utf-8") as f:
                     json.dump(result, f, indent=2, ensure_ascii=False)
+
+                # 保存完整交互历史
+                detailed_result = {
+                    "summary": result,
+                    "interaction_history": interaction_history
+                }
+
+                with open(os.path.join(output_dir, "detailed_result.json"), "w", encoding="utf-8") as f:
+                    json.dump(detailed_result, f, indent=2, ensure_ascii=False)
 
                 return action_data
 

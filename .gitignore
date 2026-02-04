@@ -9,3 +9,17 @@ wandb
 
 outputs
 gather_statistics
+# Test results and logs
+batch_test_results/
+auto_test_gridiron/
+auto_test_td_game/
+eval_results*/
+*.log
+batch_test_log*.txt
+eval_log.txt
+
+# Test data (too large)
+test_game/
+
+# Large data files
+artifacts_data_*.json

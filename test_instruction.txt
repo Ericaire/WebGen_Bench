@@ -1,0 +1,16 @@
+You are a professional front-end game developer. Your task is to implement a complete game based on the following requirements using only HTML, CSS, and JavaScript. The final output must be a single standalone HTML file that can be run directly in a browser without any build steps or external server.
+
+### Game Concept: "Gridiron Invasion"
+A classic grid-based tower defense game where players strategically place turrets to defend a base from waves of ground enemies following a fixed path.
+
+### Core Mechanics
+1.  **Path-Based Enemies**: Implement a predefined path on a 2D grid. Enemies must spawn at a starting point and follow this path precisely towards the base at the end.
+2.  **Turret Placement & Economy**: Players have a starting amount of currency. They can click on designated empty grid cells to purchase and place different types of turrets (e.g., a rapid-fire machine gun, a long-range cannon, a slowing frost tower). Defeating enemies awards more currency.
+3.  **Wave System**: The game should progress in waves. A UI element should allow the player to start the next wave. Each wave should be progressively more difficult, featuring more enemies or stronger enemy types (e.g., fast, armored).
+
+### UI & Visual Features
+-   **Game Interface**: Display the game grid, the enemy path, the player's health/lives, current currency, and the current wave number.
+-   **Turret Control Panel**: A static UI panel showing available turrets, their costs, and stats. Clicking a turret type should enable a placement mode.
+-   **Visual Feedback**: Turrets should visually fire projectiles at enemies in range. Enemies should show signs of damage and disappear upon defeat. Provide clear animations for these actions.
+
+Your code should be well-structured with comments explaining the logic for the game loop, enemy pathfinding, and turret targeting.

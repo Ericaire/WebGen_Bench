@@ -1,0 +1,579 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thermal Puzzle: Heat Diffusion Simulation</title>
+    <style>
+        :root {
+            --bg-color: #1e1e24;
+            --panel-bg: #2b2b36;
+            --text-color: #e0e0e0;
+            --accent: #4caf50;
+            --danger: #f44336;
+            --grid-gap: 2px;
+            --cell-size: 28px;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        h1 { margin: 0; font-weight: 300; letter-spacing: 1px; }
+        p { color: #aaa; font-size: 0.9rem; margin-top: 5px; }
+
+        .main-container {
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+            background: var(--panel-bg);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        /* Controls Section */
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 250px;
+        }
+
+        .panel-section {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .panel-title {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: #888;
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        /* Palette Buttons */
+        .palette {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .tool-btn {
+            background: #3a3a45;
+            border: 2px solid transparent;
+            color: white;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+            text-align: left;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-btn:hover { background: #454552; }
+        .tool-btn.active { border-color: var(--accent); background: #3a3a45; }
+
+        .material-icon {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Action Buttons */
+        .actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            transition: opacity 0.2s;
+        }
+
+        .btn-start { background-color: var(--accent); color: white; }
+        .btn-reset { background-color: #ff9800; color: white; }
+        .btn-clear { background-color: #f44336; color: white; }
+        .action-btn:hover { opacity: 0.9; }
+        .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Stats */
+        .stats-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        .stat-val { font-family: monospace; font-weight: bold; }
+        .status-msg {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            display: none;
+        }
+        .status-win { background: rgba(76, 175, 80, 0.2); color: #81c784; display: block; }
+        .status-fail { background: rgba(244, 67, 54, 0.2); color: #e57373; display: block; }
+
+        /* Grid Visualization */
+        .grid-container {
+            display: grid;
+            grid-template-columns: repeat(20, var(--cell-size));
+            grid-template-rows: repeat(20, var(--cell-size));
+            gap: 1px;
+            background: #000;
+            border: 2px solid #555;
+            user-select: none;
+        }
+
+        .cell {
+            width: 100%;
+            height: 100%;
+            background-color: #111;
+            cursor: crosshair;
+            position: relative;
+            transition: border-color 0.1s;
+        }
+        
+        /* Cell Markings */
+        .cell::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border: 1px solid rgba(255,255,255,0.05);
+            pointer-events: none;
+        }
+
+        .cell.fixed-source::before { content: 'S'; position: absolute; color: white; width: 100%; text-align: center; line-height: var(--cell-size); font-weight: bold; text-shadow: 0 0 2px black; z-index: 2; }
+        .cell.fixed-target::before { content: 'T'; position: absolute; color: white; width: 100%; text-align: center; line-height: var(--cell-size); font-weight: bold; text-shadow: 0 0 2px black; z-index: 2; }
+        .cell.fixed-sensitive::before { content: '!'; position: absolute; color: white; width: 100%; text-align: center; line-height: var(--cell-size); font-weight: bold; text-shadow: 0 0 2px black; z-index: 2; }
+
+        /* Material visual indicators (borders/patterns) */
+        .mat-copper { box-shadow: inset 0 0 0 2px #d97742; }
+        .mat-wood { box-shadow: inset 0 0 0 2px #8d6e63; }
+        .mat-stone { box-shadow: inset 0 0 0 2px #9e9e9e; }
+        .mat-insulator { background-image: repeating-linear-gradient(45deg, #222 0, #222 2px, #333 2px, #333 4px); }
+        .mat-empty { }
+
+        /* Legend */
+        .legend-gradient {
+            height: 10px;
+            background: linear-gradient(to right, blue, cyan, lime, yellow, red);
+            border-radius: 5px;
+            margin-top: 5px;
+        }
+        .legend-labels {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.7rem;
+            color: #888;
+        }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Thermal Puzzle</h1>
+        <p>Connect Source (S) to Target (T). Avoid overheating Sensitive cells (!).</p>
+    </header>
+
+    <div class="main-container">
+        <!-- Visualization -->
+        <div id="grid" class="grid-container"></div>
+
+        <!-- Controls Sidebar -->
+        <div class="controls">
+            
+            <div class="panel-section">
+                <span class="panel-title">Materials</span>
+                <div class="palette" id="palette">
+                    <!-- Buttons injected via JS -->
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <span class="panel-title">Objectives</span>
+                <div class="stats-row">
+                    <span>Target (T) > 50°C:</span>
+                    <span id="target-temp" class="stat-val">0.0°C</span>
+                </div>
+                <div class="stats-row">
+                    <span>Sensitive (!) < 30°C:</span>
+                    <span id="sens-temp" class="stat-val">0.0°C</span>
+                </div>
+                <div id="game-status" class="status-msg"></div>
+            </div>
+
+            <div class="panel-section">
+                <span class="panel-title">Heat Map</span>
+                <div class="legend-gradient"></div>
+                <div class="legend-labels">
+                    <span>0°C</span>
+                    <span>50°C</span>
+                    <span>100°C</span>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="btn-start" class="action-btn btn-start">Start</button>
+                <button id="btn-reset" class="action-btn btn-reset">Reset</button>
+                <button id="btn-clear" class="action-btn btn-clear">Clear</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // --- Configuration & Constants ---
+    const GRID_SIZE = 20;
+    const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
+    
+    // Physics Constants
+    const SOURCE_TEMP = 100;
+    const AMBIENT_TEMP = 0; // Temp of empty vacuum/air
+    const WIN_THRESHOLD = 50;
+    const LOSE_THRESHOLD = 30;
+    const DIFFUSION_RATE = 0.2; // Stability factor
+
+    // Material Properties (Conductivity 0.0 to 1.0)
+    const MATERIALS = {
+        empty:     { id: 'empty',     k: 0.01, color: 'transparent', label: 'Eraser' }, // Vacuum/Air
+        copper:    { id: 'copper',    k: 0.95, color: '#d97742',     label: 'Copper (High)' },
+        wood:      { id: 'wood',      k: 0.40, color: '#8d6e63',     label: 'Wood (Med)' },
+        stone:     { id: 'stone',     k: 0.15, color: '#9e9e9e',     label: 'Stone (Low)' },
+        insulator: { id: 'insulator', k: 0.00, color: '#333333',     label: 'Insulator (Block)' }
+    };
+
+    // --- State Management ---
+    const state = {
+        grid: new Array(TOTAL_CELLS).fill('empty'), // Material types
+        temps: new Float32Array(TOTAL_CELLS).fill(0),
+        running: false,
+        selectedTool: 'copper',
+        fixedCells: {}, // index -> type ('source', 'target', 'sensitive')
+        animationId: null
+    };
+
+    // Define Puzzle Layout
+    // Source: Top Left, Target: Bottom Right
+    // Sensitive cells: A barrier in the middle requiring routing
+    const sourceIdx = 2 * GRID_SIZE + 2;
+    const targetIdx = 17 * GRID_SIZE + 17;
+    const sensitiveIndices = [];
+    
+    // Create a wall of sensitive cells
+    for(let r=5; r<15; r++) {
+        sensitiveIndices.push(r * GRID_SIZE + 10);
+        sensitiveIndices.push(r * GRID_SIZE + 11);
+    }
+
+    state.fixedCells[sourceIdx] = 'source';
+    state.fixedCells[targetIdx] = 'target';
+    sensitiveIndices.forEach(idx => state.fixedCells[idx] = 'sensitive');
+
+    // --- DOM Elements ---
+    const gridEl = document.getElementById('grid');
+    const targetDisplay = document.getElementById('target-temp');
+    const sensDisplay = document.getElementById('sens-temp');
+    const statusEl = document.getElementById('game-status');
+    const btnStart = document.getElementById('btn-start');
+    const btnReset = document.getElementById('btn-reset');
+    const btnClear = document.getElementById('btn-clear');
+
+    // --- Initialization ---
+
+    function initUI() {
+        // Build Grid
+        gridEl.innerHTML = '';
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            const cell = document.createElement('div');
+            cell.classList.add('cell');
+            cell.dataset.index = i;
+            
+            // Add fixed classes
+            if (state.fixedCells[i]) {
+                cell.classList.add(`fixed-${state.fixedCells[i]}`);
+                // Pre-fill fixed cells with visual material (e.g. sensitive are stone-like)
+                if(state.fixedCells[i] === 'sensitive') {
+                   // Keep them conceptually 'empty' or specific material?
+                   // Let's make sensitive cells have Stone conductivity but be fixed
+                   state.grid[i] = 'stone'; 
+                   cell.classList.add('mat-stone');
+                } else if (state.fixedCells[i] === 'source') {
+                    // Source acts like copper for connectivity
+                    state.grid[i] = 'copper';
+                    cell.classList.add('mat-copper');
+                } else if (state.fixedCells[i] === 'target') {
+                    // Target acts like copper
+                    state.grid[i] = 'copper';
+                    cell.classList.add('mat-copper');
+                }
+            } else {
+                cell.classList.add('mat-empty');
+            }
+
+            // Mouse Interaction
+            cell.addEventListener('mousedown', handleCellClick);
+            cell.addEventListener('mouseenter', (e) => {
+                if(e.buttons === 1) handleCellClick(e);
+            });
+
+            gridEl.appendChild(cell);
+        }
+
+        // Build Palette
+        const paletteEl = document.getElementById('palette');
+        Object.values(MATERIALS).forEach(mat => {
+            const btn = document.createElement('div');
+            btn.className = `tool-btn ${state.selectedTool === mat.id ? 'active' : ''}`;
+            btn.innerHTML = `<span class="material-icon" style="background:${mat.color}"></span> ${mat.label}`;
+            btn.onclick = () => selectTool(mat.id);
+            paletteEl.appendChild(btn);
+        });
+
+        // Set Initial Temps
+        resetSimulation();
+    }
+
+    function selectTool(toolId) {
+        state.selectedTool = toolId;
+        // Update UI
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        const buttons = document.querySelectorAll('.tool-btn');
+        // Simple mapping based on order or text, but simpler to rebuild or match:
+        // Finding the button by text content or re-rendering is valid, 
+        // but let's just use the click handler context in a real app. 
+        // Here, simplistic class toggle loop:
+        const idx = Object.keys(MATERIALS).indexOf(toolId);
+        if(document.getElementById('palette').children[idx]) {
+            document.getElementById('palette').children[idx].classList.add('active');
+        }
+    }
+
+    function handleCellClick(e) {
+        if (state.running) return; // Locked during simulation
+
+        const idx = parseInt(e.target.dataset.index);
+        
+        // Cannot edit fixed cells
+        if (state.fixedCells[idx]) return;
+
+        const cell = gridEl.children[idx];
+        const oldMat = state.grid[idx];
+        const newMat = state.selectedTool;
+
+        if (oldMat !== newMat) {
+            cell.classList.remove(`mat-${oldMat}`);
+            cell.classList.add(`mat-${newMat}`);
+            state.grid[idx] = newMat;
+        }
+    }
+
+    // --- Simulation Logic ---
+
+    // Heat Color Map (Blue -> Cyan -> Green -> Yellow -> Red)
+    function getHeatColor(temp) {
+        // Clamp temp 0-100
+        let t = Math.max(0, Math.min(100, temp));
+        // Map 0->100 to Hue 240->0
+        const hue = 240 - (t * 2.4);
+        // Lightness: Cold is dark blue, Hot is bright red.
+        // Let's keep Lightness 50% for standard heat map visuals
+        return `hsl(${hue}, 100%, 50%)`;
+    }
+
+    function updateVisuals() {
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            const temp = state.temps[i];
+            const cell = gridEl.children[i];
+            
+            // Optimization: Only update style if temp changed significantly visual-wise
+            // But for 400 cells, direct update is fine.
+            if (temp > 1) {
+                cell.style.backgroundColor = getHeatColor(temp);
+            } else {
+                cell.style.backgroundColor = '#111'; // Reset to dark
+            }
+        }
+
+        // Stats
+        const tTemp = state.temps[targetIdx];
+        let maxSensTemp = 0;
+        sensitiveIndices.forEach(idx => {
+            if (state.temps[idx] > maxSensTemp) maxSensTemp = state.temps[idx];
+        });
+
+        targetDisplay.textContent = tTemp.toFixed(1) + "°C";
+        sensDisplay.textContent = maxSensTemp.toFixed(1) + "°C";
+        
+        // Visual feedback on numbers
+        targetDisplay.style.color = tTemp >= WIN_THRESHOLD ? '#4caf50' : '#e0e0e0';
+        sensDisplay.style.color = maxSensTemp >= LOSE_THRESHOLD ? '#f44336' : '#e0e0e0';
+
+        return { tTemp, maxSensTemp };
+    }
+
+    function simulationStep() {
+        const nextTemps = new Float32Array(state.temps);
+        
+        // Helper for coordinates
+        const getXY = (i) => ({ x: i % GRID_SIZE, y: Math.floor(i / GRID_SIZE) });
+        const getIdx = (x, y) => {
+            if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return -1;
+            return y * GRID_SIZE + x;
+        };
+
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            // Source always stays hot
+            if (i === sourceIdx) {
+                nextTemps[i] = SOURCE_TEMP;
+                continue;
+            }
+
+            const currentMat = MATERIALS[state.grid[i]];
+            const currentTemp = state.temps[i];
+            
+            // If cell is insulator, it barely conducts, but we handle that via K
+            
+            const { x, y } = getXY(i);
+            const neighbors = [
+                getIdx(x, y - 1), // Top
+                getIdx(x, y + 1), // Bottom
+                getIdx(x - 1, y), // Left
+                getIdx(x + 1, y)  // Right
+            ];
+
+            let heatFlow = 0;
+
+            neighbors.forEach(nIdx => {
+                if (nIdx !== -1) {
+                    const neighborTemp = state.temps[nIdx];
+                    const neighborMat = MATERIALS[state.grid[nIdx]];
+                    
+                    // Simple interface conductivity: Average of two materials
+                    // Or Harmonic mean for more realism, but arithmetic mean is fine for game
+                    const kInterface = (currentMat.k + neighborMat.k) / 2;
+                    
+                    heatFlow += kInterface * (neighborTemp - currentTemp);
+                }
+            });
+
+            // Ambient cooling (optional, keeps system stable if isolated)
+            // heatFlow -= 0.01 * (currentTemp - AMBIENT_TEMP);
+
+            nextTemps[i] = currentTemp + (DIFFUSION_RATE * heatFlow);
+        }
+
+        state.temps = nextTemps;
+        const stats = updateVisuals();
+        checkWinCondition(stats.tTemp, stats.maxSensTemp);
+        
+        if (state.running) {
+            state.animationId = requestAnimationFrame(simulationStep);
+        }
+    }
+
+    function checkWinCondition(targetT, sensT) {
+        if (sensT >= LOSE_THRESHOLD) {
+            gameOver("Overheated! Sensitive component destroyed.", false);
+        } else if (targetT >= WIN_THRESHOLD) {
+            gameOver("Success! Target temperature reached.", true);
+        }
+    }
+
+    function gameOver(msg, win) {
+        state.running = false;
+        cancelAnimationFrame(state.animationId);
+        statusEl.textContent = msg;
+        statusEl.className = 'status-msg ' + (win ? 'status-win' : 'status-fail');
+        statusEl.style.display = 'block';
+        toggleControls(false);
+    }
+
+    // --- Control Logic ---
+
+    function startSimulation() {
+        if (state.running) return;
+        state.running = true;
+        statusEl.style.display = 'none';
+        toggleControls(true);
+        simulationStep();
+    }
+
+    function resetSimulation() {
+        state.running = false;
+        cancelAnimationFrame(state.animationId);
+        
+        // Reset Temperatures
+        state.temps.fill(AMBIENT_TEMP);
+        state.temps[sourceIdx] = SOURCE_TEMP; // Source starts hot
+        
+        updateVisuals();
+        statusEl.style.display = 'none';
+        toggleControls(false);
+    }
+
+    function clearMaterials() {
+        resetSimulation();
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            if (!state.fixedCells[i]) {
+                const oldMat = state.grid[i];
+                state.grid[i] = 'empty';
+                const cell = gridEl.children[i];
+                cell.classList.remove(`mat-${oldMat}`);
+                cell.classList.add('mat-empty');
+            }
+        }
+    }
+
+    function toggleControls(isRunning) {
+        btnStart.disabled = isRunning;
+        btnReset.disabled = false;
+        btnClear.disabled = isRunning;
+        
+        if (isRunning) {
+            btnStart.textContent = "Running...";
+            gridEl.style.cursor = "wait";
+        } else {
+            btnStart.textContent = "Start Simulation";
+            gridEl.style.cursor = "default";
+        }
+    }
+
+    // Event Listeners
+    btnStart.addEventListener('click', startSimulation);
+    btnReset.addEventListener('click', resetSimulation);
+    btnClear.addEventListener('click', clearMaterials);
+
+    // Bootstrap
+    initUI();
+
+</script>
+</body>
+</html>

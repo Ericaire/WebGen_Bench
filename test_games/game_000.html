@@ -1,0 +1,866 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gridiron Invasion - Tower Defense</title>
+    <style>
+        /* --- CSS STYLES --- */
+        :root {
+            --bg-color: #222;
+            --panel-bg: #333;
+            --text-color: #eee;
+            --accent: #f39c12;
+            --danger: #e74c3c;
+            --success: #2ecc71;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* Layout */
+        #game-container {
+            position: relative;
+            display: flex;
+            flex-direction: row;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
+        }
+
+        canvas {
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border: 2px solid #555;
+            cursor: crosshair;
+        }
+
+        /* Sidebar UI */
+        #sidebar {
+            width: 250px;
+            height: 600px; /* Match canvas height */
+            background-color: var(--panel-bg);
+            padding: 20px;
+            box-sizing: border-box;
+            border-top: 2px solid #555;
+            border-bottom: 2px solid #555;
+            border-right: 2px solid #555;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; color: var(--accent); text-transform: uppercase; letter-spacing: 2px; }
+        
+        .stat-box {
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .stat-label { color: #aaa; font-size: 0.9rem; }
+        .stat-value { font-weight: bold; font-size: 1.1rem; }
+
+        /* Shop Controls */
+        #shop { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+        .shop-btn {
+            background: #444;
+            border: 1px solid #666;
+            color: white;
+            padding: 10px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: all 0.2s;
+            border-radius: 4px;
+        }
+        .shop-btn:hover { background: #555; border-color: var(--accent); }
+        .shop-btn.active { background: var(--accent); border-color: #fff; color: #222; }
+        .shop-btn.disabled { opacity: 0.5; cursor: not-allowed; }
+        .turret-preview { width: 20px; height: 20px; margin-bottom: 5px; border-radius: 50%; border: 2px solid #fff; }
+        
+        /* Turret Specific Styles for UI */
+        .t-gunner { background-color: #3498db; }
+        .t-sniper { background-color: #e74c3c; }
+        .t-frost { background-color: #9b59b6; }
+
+        /* Wave Control */
+        #wave-controls { margin-top: auto; }
+        #next-wave-btn {
+            width: 100%;
+            padding: 15px;
+            background: var(--success);
+            border: none;
+            color: white;
+            font-weight: bold;
+            font-size: 1rem;
+            cursor: pointer;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+        #next-wave-btn:hover { filter: brightness(1.1); }
+        #next-wave-btn:disabled { background: #555; cursor: default; }
+
+        /* Overlays */
+        #game-over-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+        #game-over-screen h2 { font-size: 3rem; color: var(--danger); margin-bottom: 20px; }
+        #restart-btn {
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            background: var(--accent);
+            border: none;
+            cursor: pointer;
+            color: #222;
+            font-weight: bold;
+        }
+
+        /* Tooltip text */
+        small { font-size: 0.75rem; opacity: 0.8; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="sidebar">
+        <h1>Gridiron<br>Invasion</h1>
+        
+        <!-- Stats -->
+        <div class="stat-box">
+            <span class="stat-label">LIVES</span>
+            <span class="stat-value" id="lives-display">20</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">CREDITS</span>
+            <span class="stat-value" id="money-display">$120</span>
+        </div>
+        <div class="stat-box">
+            <span class="stat-label">WAVE</span>
+            <span class="stat-value" id="wave-display">1</span>
+        </div>
+
+        <!-- Shop -->
+        <div id="shop">
+            <div style="font-size:0.9rem; color:#aaa; margin-bottom:5px;">BUILD TURRETS</div>
+            
+            <button class="shop-btn" id="btn-gunner" onclick="selectTurret('gunner')">
+                <div class="turret-preview t-gunner"></div>
+                <span>Gunner ($50)</span>
+                <small>Fast, Low Dmg</small>
+            </button>
+            
+            <button class="shop-btn" id="btn-sniper" onclick="selectTurret('sniper')">
+                <div class="turret-preview t-sniper"></div>
+                <span>Sniper ($120)</span>
+                <small>Slow, High Range</small>
+            </button>
+            
+            <button class="shop-btn" id="btn-frost" onclick="selectTurret('frost')">
+                <div class="turret-preview t-frost"></div>
+                <span>Frost ($150)</span>
+                <small>Slows Enemies</small>
+            </button>
+        </div>
+
+        <div id="wave-controls">
+            <button id="next-wave-btn" onclick="startNextWave()">Start Wave</button>
+            <div id="wave-status" style="text-align:center; margin-top:10px; color:#888; font-size:0.8rem;">Ready</div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="game-over-screen">
+        <h2>GAME OVER</h2>
+        <p style="margin-bottom: 20px; font-size: 1.2rem;">The base was overrun.</p>
+        <button id="restart-btn" onclick="restartGame()">TRY AGAIN</button>
+    </div>
+</div>
+
+<script>
+/**
+ * GRIDIRON INVASION
+ * Pure JS Tower Defense Game
+ */
+
+// --- CONFIGURATION ---
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
+const TILE_SIZE = 40;
+const COLS = 20;
+const ROWS = 15;
+
+// Map: 0 = Grass (Buildable), 1 = Path, 2 = Base
+// A winding path from top-left to bottom-right
+const MAP_GRID = [
+    [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0],
+    [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2],
+    [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+];
+
+// Turret Definitions
+const TURRET_TYPES = {
+    'gunner': { name: 'Gunner', cost: 50, range: 120, damage: 10, fireRate: 30, color: '#3498db', type: 'projectile' },
+    'sniper': { name: 'Sniper', cost: 120, range: 250, damage: 50, fireRate: 90, color: '#e74c3c', type: 'projectile' },
+    'frost':  { name: 'Frost',  cost: 150, range: 100, damage: 2,  fireRate: 5,  color: '#9b59b6', type: 'beam', slowFactor: 0.5 }
+};
+
+// Wave Definitions
+const WAVES = [
+    { count: 5, interval: 60, speed: 2, hp: 30, color: '#e67e22' },          // Wave 1
+    { count: 10, interval: 50, speed: 2.5, hp: 50, color: '#d35400' },       // Wave 2
+    { count: 15, interval: 40, speed: 3, hp: 80, color: '#c0392b' },         // Wave 3
+    { count: 5, interval: 60, speed: 1.5, hp: 300, color: '#8e44ad' },       // Wave 4 (Tank)
+    { count: 25, interval: 20, speed: 4, hp: 60, color: '#f1c40f' },         // Wave 5 (Rush)
+    { count: 10, interval: 60, speed: 2, hp: 600, color: '#2c3e50' }         // Wave 6 (Boss)
+];
+
+// --- GAME STATE ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let gameState = {
+    money: 120,
+    lives: 20,
+    wave: 1,
+    enemies: [],
+    turrets: [],
+    projectiles: [],
+    particles: [], // For explosions/visuals
+    path: [], // Array of {x, y} coordinates for centers of path tiles
+    waveActive: false,
+    waveComplete: false,
+    enemiesToSpawn: 0,
+    spawnTimer: 0,
+    currentWaveConfig: null,
+    selectedTurret: null, // 'gunner', 'sniper', etc.
+    gameOver: false
+};
+
+// --- INITIALIZATION ---
+
+function init() {
+    buildPath();
+    updateUI();
+    gameLoop();
+}
+
+// Convert grid map to a linear path of center points for enemies to follow
+function buildPath() {
+    // Determine start point (first '1' in map)
+    let startX = 0, startY = 0;
+    
+    // Simple greedy pathfinder for the predefined single path
+    // We assume the path is continuous and non-branching for this specific implementation
+    for(let y=0; y<ROWS; y++) {
+        if(MAP_GRID[y][0] === 1) { startX = 0; startY = y; break; }
+    }
+
+    let current = { x: startX, y: startY };
+    let visited = new Set();
+    gameState.path = [];
+    
+    // Directions: Right, Down, Left, Up
+    const dirs = [[1,0], [0,1], [-1,0], [0,-1]];
+    
+    // Add start center
+    gameState.path.push({ 
+        x: current.x * TILE_SIZE + TILE_SIZE/2, 
+        y: current.y * TILE_SIZE + TILE_SIZE/2 
+    });
+    visited.add(`${current.x},${current.y}`);
+
+    let finding = true;
+    while(finding) {
+        let foundNext = false;
+        
+        for (let d of dirs) {
+            let nx = current.x + d[0];
+            let ny = current.y + d[1];
+            
+            if (nx >= 0 && nx < COLS && ny >= 0 && ny < ROWS) {
+                let cell = MAP_GRID[ny][nx];
+                if ((cell === 1 || cell === 2) && !visited.has(`${nx},${ny}`)) {
+                    gameState.path.push({
+                        x: nx * TILE_SIZE + TILE_SIZE/2,
+                        y: ny * TILE_SIZE + TILE_SIZE/2
+                    });
+                    visited.add(`${nx},${ny}`);
+                    current = { x: nx, y: ny };
+                    foundNext = true;
+                    if (cell === 2) finding = false; // Reached base
+                    break;
+                }
+            }
+        }
+        if (!foundNext) finding = false;
+    }
+}
+
+// --- CLASSES ---
+
+class Enemy {
+    constructor(config) {
+        this.pathIndex = 0;
+        this.x = gameState.path[0].x;
+        this.y = gameState.path[0].y;
+        this.speed = config.speed;
+        this.baseSpeed = config.speed;
+        this.maxHp = config.hp;
+        this.hp = config.hp;
+        this.color = config.color;
+        this.radius = 12;
+        this.frozenTimer = 0; // Frames remaining slowed
+        this.active = true;
+    }
+
+    update() {
+        // Handle Slow effect
+        if (this.frozenTimer > 0) {
+            this.frozenTimer--;
+            this.speed = this.baseSpeed * 0.5;
+        } else {
+            this.speed = this.baseSpeed;
+        }
+
+        // Movement Logic
+        let target = gameState.path[this.pathIndex + 1];
+        if (!target) return; // End of path
+
+        let dx = target.x - this.x;
+        let dy = target.y - this.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist <= this.speed) {
+            // Reached waypoint
+            this.x = target.x;
+            this.y = target.y;
+            this.pathIndex++;
+            if (this.pathIndex >= gameState.path.length - 1) {
+                this.reachBase();
+            }
+        } else {
+            // Move towards waypoint
+            this.x += (dx / dist) * this.speed;
+            this.y += (dy / dist) * this.speed;
+        }
+    }
+
+    takeDamage(amount) {
+        this.hp -= amount;
+        if (this.hp <= 0) {
+            this.die();
+        }
+    }
+
+    applySlow(duration) {
+        this.frozenTimer = duration;
+    }
+
+    reachBase() {
+        this.active = false;
+        gameState.lives--;
+        updateUI();
+        createParticles(this.x, this.y, '#e74c3c', 10);
+        if (gameState.lives <= 0) endGame();
+    }
+
+    die() {
+        this.active = false;
+        gameState.money += 15; // Reward
+        updateUI();
+        createParticles(this.x, this.y, this.color, 5);
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Frost effect
+        if (this.frozenTimer > 0) {
+            ctx.strokeStyle = '#aaf';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Health Bar
+        const hpPct = this.hp / this.maxHp;
+        ctx.fillStyle = 'red';
+        ctx.fillRect(this.x - 10, this.y - 20, 20, 4);
+        ctx.fillStyle = '#2ecc71';
+        ctx.fillRect(this.x - 10, this.y - 20, 20 * hpPct, 4);
+    }
+}
+
+class Turret {
+    constructor(c, r, type) {
+        this.c = c; // Grid col
+        this.r = r; // Grid row
+        this.x = c * TILE_SIZE + TILE_SIZE/2;
+        this.y = r * TILE_SIZE + TILE_SIZE/2;
+        this.config = TURRET_TYPES[type];
+        this.cooldown = 0;
+        this.angle = 0;
+    }
+
+    update() {
+        if (this.cooldown > 0) this.cooldown--;
+
+        // Find Target
+        let target = null;
+        let minDist = Infinity;
+
+        // Simple targeting: closest enemy
+        // Ideally should be "first enemy on path in range" for better TD logic, 
+        // but closest is fine for this scope.
+        for (let enemy of gameState.enemies) {
+            let dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
+            if (dist <= this.config.range) {
+                // Optimization: Target enemies closest to base (highest pathIndex)
+                if (!target || enemy.pathIndex > target.pathIndex) { 
+                    target = enemy;
+                    minDist = dist;
+                }
+            }
+        }
+
+        if (target) {
+            // Rotate turret
+            this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+
+            if (this.cooldown <= 0) {
+                this.shoot(target);
+                this.cooldown = this.config.fireRate;
+            }
+        }
+    }
+
+    shoot(target) {
+        if (this.config.type === 'projectile') {
+            gameState.projectiles.push(new Projectile(this.x, this.y, target, this.config.damage, this.config.color));
+        } else if (this.config.type === 'beam') {
+            // Instant hit (Frost)
+            target.takeDamage(this.config.damage);
+            if (this.config.slowFactor) {
+                target.applySlow(10); // Apply slow for 10 frames (refreshes constantly while beaming)
+            }
+            // Visual Beam
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y);
+            ctx.lineTo(target.x, target.y);
+            ctx.strokeStyle = 'rgba(155, 89, 182, 0.5)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+        }
+    }
+
+    draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        
+        // Base
+        ctx.fillStyle = '#555';
+        ctx.fillRect(-16, -16, 32, 32);
+        
+        // Turret Head Rotation
+        ctx.rotate(this.angle);
+        
+        ctx.fillStyle = this.config.color;
+        // Draw different shapes based on type
+        if (this.config.name === 'Gunner') {
+            ctx.fillRect(-10, -10, 20, 20);
+            ctx.fillRect(0, -4, 20, 8); // Barrel
+        } else if (this.config.name === 'Sniper') {
+            ctx.beginPath();
+            ctx.arc(0, 0, 12, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillRect(0, -3, 28, 6); // Long Barrel
+        } else {
+            // Frost
+            ctx.beginPath();
+            ctx.moveTo(-10, -10);
+            ctx.lineTo(10, 0);
+            ctx.lineTo(-10, 10);
+            ctx.fill();
+        }
+
+        ctx.restore();
+    }
+}
+
+class Projectile {
+    constructor(x, y, target, damage, color) {
+        this.x = x;
+        this.y = y;
+        this.target = target;
+        this.damage = damage;
+        this.color = color;
+        this.speed = 8;
+        this.active = true;
+        this.radius = 4;
+    }
+
+    update() {
+        if (!this.target.active) {
+            this.active = false;
+            return;
+        }
+
+        let dx = this.target.x - this.x;
+        let dy = this.target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+
+        if (dist <= this.speed) {
+            // Hit
+            this.target.takeDamage(this.damage);
+            this.active = false;
+        } else {
+            // Homing
+            this.x += (dx / dist) * this.speed;
+            this.y += (dy / dist) * this.speed;
+        }
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.vx = (Math.random() - 0.5) * 4;
+        this.vy = (Math.random() - 0.5) * 4;
+        this.life = 1.0;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= 0.05;
+    }
+    draw(ctx) {
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.fillRect(this.x, this.y, 3, 3);
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+// --- LOGIC HELPERS ---
+
+function createParticles(x, y, color, count) {
+    for(let i=0; i<count; i++) {
+        gameState.particles.push(new Particle(x, y, color));
+    }
+}
+
+function startNextWave() {
+    if (gameState.waveActive) return;
+    
+    // Check if max waves reached
+    if (gameState.wave > WAVES.length) {
+        alert("You Win! Endless mode continuing...");
+        // Generate procedural wave
+        gameState.currentWaveConfig = {
+            count: 20 + gameState.wave * 2,
+            interval: 30,
+            speed: 2 + (gameState.wave * 0.2),
+            hp: 100 + (gameState.wave * 50),
+            color: '#fff'
+        };
+    } else {
+        gameState.currentWaveConfig = WAVES[gameState.wave - 1];
+    }
+
+    gameState.waveActive = true;
+    gameState.waveComplete = false;
+    gameState.enemiesToSpawn = gameState.currentWaveConfig.count;
+    gameState.spawnTimer = 0;
+    
+    document.getElementById('next-wave-btn').disabled = true;
+    document.getElementById('wave-status').innerText = "Wave In Progress...";
+}
+
+function spawnEnemy() {
+    gameState.enemies.push(new Enemy(gameState.currentWaveConfig));
+    gameState.enemiesToSpawn--;
+}
+
+function selectTurret(type) {
+    if (gameState.selectedTurret === type) {
+        // Deselect
+        gameState.selectedTurret = null;
+    } else {
+        gameState.selectedTurret = type;
+    }
+    updateShopUI();
+}
+
+function placeTurret(x, y) {
+    if (!gameState.selectedTurret) return;
+
+    // Get grid coordinates
+    let c = Math.floor(x / TILE_SIZE);
+    let r = Math.floor(y / TILE_SIZE);
+
+    // Check bounds
+    if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
+
+    // Check map (0 is grass/buildable)
+    if (MAP_GRID[r][c] !== 0) return;
+
+    // Check if turret exists
+    if (gameState.turrets.some(t => t.c === c && t.r === r)) return;
+
+    // Check cost
+    let cost = TURRET_TYPES[gameState.selectedTurret].cost;
+    if (gameState.money >= cost) {
+        gameState.money -= cost;
+        gameState.turrets.push(new Turret(c, r, gameState.selectedTurret));
+        updateUI();
+        // Keep selection active for rapid placement? No, let's deselect for safety.
+        gameState.selectedTurret = null;
+        updateShopUI();
+    }
+}
+
+function restartGame() {
+    gameState = {
+        money: 120,
+        lives: 20,
+        wave: 1,
+        enemies: [],
+        turrets: [],
+        projectiles: [],
+        particles: [],
+        path: gameState.path,
+        waveActive: false,
+        waveComplete: false,
+        enemiesToSpawn: 0,
+        spawnTimer: 0,
+        currentWaveConfig: null,
+        selectedTurret: null,
+        gameOver: false
+    };
+    document.getElementById('game-over-screen').style.display = 'none';
+    updateUI();
+    updateShopUI();
+}
+
+function endGame() {
+    gameState.gameOver = true;
+    document.getElementById('game-over-screen').style.display = 'flex';
+}
+
+// --- UPDATE & DRAW ---
+
+function update() {
+    if (gameState.gameOver) return;
+
+    // Wave Logic
+    if (gameState.waveActive) {
+        if (gameState.enemiesToSpawn > 0) {
+            gameState.spawnTimer++;
+            if (gameState.spawnTimer >= gameState.currentWaveConfig.interval) {
+                spawnEnemy();
+                gameState.spawnTimer = 0;
+            }
+        } else if (gameState.enemies.length === 0) {
+            // Wave Over
+            gameState.waveActive = false;
+            gameState.wave++;
+            updateUI();
+            document.getElementById('next-wave-btn').disabled = false;
+            document.getElementById('wave-status').innerText = "Wave Complete";
+        }
+    }
+
+    // Update Entities
+    gameState.enemies.forEach(e => e.update());
+    gameState.turrets.forEach(t => t.update());
+    gameState.projectiles.forEach(p => p.update());
+    gameState.particles.forEach(p => p.update());
+
+    // Clean up dead/inactive
+    gameState.enemies = gameState.enemies.filter(e => e.active);
+    gameState.projectiles = gameState.projectiles.filter(p => p.active);
+    gameState.particles = gameState.particles.filter(p => p.life > 0);
+}
+
+function draw() {
+    // Clear Screen
+    ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    // 1. Draw Map
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            let type = MAP_GRID[r][c];
+            let x = c * TILE_SIZE;
+            let y = r * TILE_SIZE;
+            
+            if (type === 0) {
+                // Grass
+                ctx.fillStyle = ((c+r)%2 === 0) ? '#222' : '#252525';
+            } else if (type === 1) {
+                // Path
+                ctx.fillStyle = '#555';
+            } else if (type === 2) {
+                // Base
+                ctx.fillStyle = '#2ecc71';
+            }
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        }
+    }
+
+    // 2. Draw Base Icon (simple cross)
+    let endTile = gameState.path[gameState.path.length-1];
+    ctx.fillStyle = "rgba(46, 204, 113, 0.3)";
+    ctx.beginPath();
+    ctx.arc(endTile.x, endTile.y, 15, 0, Math.PI*2);
+    ctx.fill();
+
+    // 3. Draw Turrets
+    gameState.turrets.forEach(t => t.draw(ctx));
+
+    // 4. Draw Enemies
+    gameState.enemies.forEach(e => e.draw(ctx));
+
+    // 5. Draw Projectiles
+    gameState.projectiles.forEach(p => p.draw(ctx));
+
+    // 6. Draw Particles
+    gameState.particles.forEach(p => p.draw(ctx));
+
+    // 7. Draw Placement Ghost/Range
+    if (gameState.selectedTurret && !gameState.gameOver) {
+        // We need mouse pos, but we handle that in click. 
+        // For hover effect, we'd need a mousemove listener.
+        // Let's implement basic range circle if hovering valid tile (requires mouse tracking variable)
+        if (mousePos.x >= 0) {
+            let c = Math.floor(mousePos.x / TILE_SIZE);
+            let r = Math.floor(mousePos.y / TILE_SIZE);
+            
+            if (c >= 0 && c < COLS && r >= 0 && r < ROWS) {
+                let gx = c * TILE_SIZE + TILE_SIZE/2;
+                let gy = r * TILE_SIZE + TILE_SIZE/2;
+                let range = TURRET_TYPES[gameState.selectedTurret].range;
+
+                // Range Circle
+                ctx.beginPath();
+                ctx.arc(gx, gy, range, 0, Math.PI*2);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+                ctx.fill();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.stroke();
+
+                // Validation box
+                let valid = (MAP_GRID[r][c] === 0) && !gameState.turrets.some(t => t.c === c && t.r === r);
+                ctx.fillStyle = valid ? 'rgba(46, 204, 113, 0.5)' : 'rgba(231, 76, 60, 0.5)';
+                ctx.fillRect(c*TILE_SIZE, r*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+            }
+        }
+    }
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// --- INPUT & UI ---
+
+let mousePos = { x: -1, y: -1 };
+
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mousePos.x = e.clientX - rect.left;
+    mousePos.y = e.clientY - rect.top;
+});
+
+canvas.addEventListener('mouseleave', () => {
+    mousePos.x = -1;
+    mousePos.y = -1;
+});
+
+canvas.addEventListener('click', (e) => {
+    if (gameState.gameOver) return;
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    placeTurret(clickX, clickY);
+});
+
+function updateUI() {
+    document.getElementById('lives-display').innerText = gameState.lives;
+    document.getElementById('money-display').innerText = '$' + gameState.money;
+    document.getElementById('wave-display').innerText = gameState.wave;
+    updateShopUI();
+}
+
+function updateShopUI() {
+    const types = ['gunner', 'sniper', 'frost'];
+    types.forEach(type => {
+        const btn = document.getElementById('btn-' + type);
+        const cost = TURRET_TYPES[type].cost;
+        
+        // Active state
+        if (gameState.selectedTurret === type) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+
+        // Disabled state (money)
+        if (gameState.money < cost) {
+            btn.classList.add('disabled');
+        } else {
+            btn.classList.remove('disabled');
+        }
+    });
+}
+
+// Start
+init();
+
+</script>
+</body>
+</html>

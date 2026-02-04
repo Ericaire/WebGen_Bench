@@ -1,0 +1,689 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hydro Logic - Flow Simulation Puzzle</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --panel-color: #16213e;
+            --accent-color: #0f3460;
+            --text-color: #e94560;
+            --water-color: #00d2ff;
+            --pipe-color: #535c68;
+            --grid-line: #2a2a3e;
+            --cell-size: 60px;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: white;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        header {
+            width: 100%;
+            padding: 10px 20px;
+            background-color: var(--panel-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; color: var(--water-color); }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-weight: bold;
+        }
+
+        .stat-box {
+            background: var(--accent-color);
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+
+        #game-container {
+            display: flex;
+            flex: 1;
+            width: 100%;
+            max-width: 1000px;
+            padding: 20px;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        /* Inventory Sidebar */
+        #sidebar {
+            width: 200px;
+            background: var(--panel-color);
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .inventory-item {
+            background: var(--accent-color);
+            padding: 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: 0.2s;
+            border: 2px solid transparent;
+        }
+
+        .inventory-item:hover { background-color: #1a1a2e; }
+        .inventory-item.selected { border-color: var(--water-color); }
+        .inventory-count { font-weight: bold; color: var(--text-color); }
+
+        /* The Grid */
+        #grid-wrapper {
+            position: relative;
+            background: var(--panel-color);
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(8, var(--cell-size));
+            grid-template-rows: repeat(8, var(--cell-size));
+            gap: 1px;
+            background-color: var(--grid-line);
+            border: 1px solid var(--grid-line);
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background-color: var(--bg-color);
+            position: relative;
+            cursor: pointer;
+        }
+
+        .cell:hover { background-color: #252540; }
+
+        /* Pipe Styling */
+        .pipe-svg {
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass to cell */
+            transition: transform 0.3s ease;
+        }
+
+        .pipe-body {
+            fill: none;
+            stroke: var(--pipe-color);
+            stroke-width: 12;
+            stroke-linecap: round;
+        }
+
+        .water-path {
+            fill: none;
+            stroke: var(--water-color);
+            stroke-width: 6;
+            stroke-linecap: round;
+            stroke-dasharray: 100;
+            stroke-dashoffset: 100; /* Hidden initially */
+            opacity: 0;
+        }
+
+        .flowing .water-path {
+            opacity: 1;
+            animation: flowAnim 1s linear forwards;
+        }
+
+        @keyframes flowAnim {
+            to { stroke-dashoffset: 0; }
+        }
+
+        /* Source and Outlet Markers */
+        .marker {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 10px;
+            font-weight: bold;
+            z-index: 10;
+            pointer-events: none;
+            text-shadow: 0 1px 2px black;
+        }
+        .source-marker { color: #00ff88; }
+        .outlet-marker { color: #ff9900; flex-direction: column;}
+
+        /* Controls */
+        #controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: var(--text-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: gray; cursor: not-allowed; }
+        button#reset-btn { background: var(--accent-color); }
+
+        /* Modal */
+        #modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .modal-content {
+            background: var(--panel-color);
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            border: 2px solid var(--water-color);
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Hydro Logic</h1>
+    <div class="stats">
+        <div class="stat-box">Source Flow: <span id="source-val">100</span></div>
+        <div class="stat-box">Rotations Left: <span id="rot-val">10</span></div>
+    </div>
+</header>
+
+<div id="game-container">
+    <div id="sidebar">
+        <h3>Parts Inventory</h3>
+        <p style="font-size: 0.8rem; color: #aaa;">Click to select, click grid to place. Click placed pipe to rotate. Right-click to remove.</p>
+        
+        <div class="inventory-item" data-type="straight" onclick="selectTool('straight')">
+            <svg width="30" height="30" viewBox="0 0 100 100">
+                <line x1="50" y1="0" x2="50" y2="100" stroke="#ccc" stroke-width="20" />
+            </svg>
+            <span>Straight</span>
+            <span class="inventory-count" id="count-straight">15</span>
+        </div>
+
+        <div class="inventory-item" data-type="elbow" onclick="selectTool('elbow')">
+            <svg width="30" height="30" viewBox="0 0 100 100">
+                <path d="M50,0 L50,50 L100,50" fill="none" stroke="#ccc" stroke-width="20" />
+            </svg>
+            <span>Elbow</span>
+            <span class="inventory-count" id="count-elbow">15</span>
+        </div>
+
+        <div class="inventory-item" data-type="tsplit" onclick="selectTool('tsplit')">
+            <svg width="30" height="30" viewBox="0 0 100 100">
+                <path d="M50,0 L50,100 M50,50 L100,50" fill="none" stroke="#ccc" stroke-width="20" />
+            </svg>
+            <span>T-Split</span>
+            <span class="inventory-count" id="count-tsplit">5</span>
+        </div>
+
+        <div id="controls">
+            <button id="run-btn" onclick="runSimulation()">Start Flow</button>
+            <button id="reset-btn" onclick="resetGrid()">Clear</button>
+        </div>
+        <div id="status-msg" style="margin-top:10px; color: orange; min-height: 20px;"></div>
+    </div>
+
+    <div id="grid-wrapper">
+        <div id="grid"></div>
+    </div>
+</div>
+
+<div id="modal">
+    <div class="modal-content">
+        <h2 id="modal-title">Success!</h2>
+        <p id="modal-msg">All targets met.</p>
+        <button onclick="closeModal()">Close</button>
+    </div>
+</div>
+
+<script>
+    // --- Configuration & State ---
+    const GRID_SIZE = 8;
+    const MAX_ROTATIONS = 10;
+    
+    // Pipe Definitions (Bitmask: Top=1, Right=2, Bottom=4, Left=8)
+    const PIPE_TYPES = {
+        straight: { mask: 0b0101, svg: '<line x1="50" y1="0" x2="50" y2="100" class="pipe-body"/><path d="M50,0 L50,100" class="water-path"/>' }, // Vertical default
+        elbow:    { mask: 0b0011, svg: '<path d="M50,100 Q50,50 100,50" fill="none" class="pipe-body"/><path d="M50,100 Q50,50 100,50" class="water-path"/>' }, // Bottom-Right default
+        tsplit:   { mask: 0b0111, svg: '<path d="M50,0 L50,100 M50,50 L100,50" fill="none" class="pipe-body"/><path d="M50,0 L50,50 L100,50 M50,50 L50,100" class="water-path"/>' } // Top, Bottom, Right
+    };
+
+    // Game Level Data
+    const LEVEL = {
+        source: { x: 0, y: 0, amount: 100 },
+        outlets: [
+            { x: 7, y: 2, required: 50 },
+            { x: 5, y: 7, required: 25 },
+            { x: 2, y: 6, required: 25 }
+        ]
+    };
+
+    // State
+    let gridState = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(null));
+    let inventory = { straight: 15, elbow: 15, tsplit: 5 };
+    let rotationsLeft = MAX_ROTATIONS;
+    let selectedTool = null;
+    let isSimulating = false;
+
+    // --- Initialization ---
+
+    function init() {
+        createGrid();
+        updateUI();
+        document.getElementById('source-val').innerText = LEVEL.source.amount;
+    }
+
+    function createGrid() {
+        const gridEl = document.getElementById('grid');
+        gridEl.innerHTML = '';
+        
+        for (let y = 0; y < GRID_SIZE; y++) {
+            for (let x = 0; x < GRID_SIZE; x++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.x = x;
+                cell.dataset.y = y;
+                cell.onclick = () => handleCellClick(x, y);
+                cell.oncontextmenu = (e) => { e.preventDefault(); removePipe(x, y); };
+
+                // Render Source
+                if (x === LEVEL.source.x && y === LEVEL.source.y) {
+                    const mk = document.createElement('div');
+                    mk.className = 'marker source-marker';
+                    mk.innerHTML = "SOURCE<br>▼";
+                    cell.appendChild(mk);
+                    cell.style.border = "1px solid #00ff88";
+                }
+
+                // Render Outlets
+                const outlet = LEVEL.outlets.find(o => o.x === x && o.y === y);
+                if (outlet) {
+                    const mk = document.createElement('div');
+                    mk.className = 'marker outlet-marker';
+                    mk.innerHTML = `TARGET<br>${outlet.required}`;
+                    mk.id = `outlet-${x}-${y}`;
+                    cell.appendChild(mk);
+                    cell.style.border = "1px solid #ff9900";
+                }
+
+                gridEl.appendChild(cell);
+            }
+        }
+    }
+
+    // --- Interaction ---
+
+    function selectTool(type) {
+        // Deselect logic
+        if (selectedTool === type) {
+            selectedTool = null;
+            document.querySelectorAll('.inventory-item').forEach(el => el.classList.remove('selected'));
+            return;
+        }
+
+        selectedTool = type;
+        document.querySelectorAll('.inventory-item').forEach(el => el.classList.remove('selected'));
+        const activeItem = document.querySelector(`.inventory-item[data-type="${type}"]`);
+        if(activeItem) activeItem.classList.add('selected');
+    }
+
+    function handleCellClick(x, y) {
+        if (isSimulating) return;
+        const existing = gridState[y][x];
+
+        // 1. Rotation Logic (if pipe exists)
+        if (existing) {
+            if (rotationsLeft > 0) {
+                existing.rotation = (existing.rotation + 90) % 360;
+                rotationsLeft--;
+                renderPipe(x, y);
+                updateUI();
+            } else {
+                showMessage("No rotations left!");
+            }
+            return;
+        }
+
+        // 2. Placement Logic
+        if (selectedTool && inventory[selectedTool] > 0) {
+            // Check if valid spot (not on top of source/outlet logic not needed strictly, but visually clearer)
+            // Actually, we can place pipes ON source/outlets, that's how we connect them.
+            
+            gridState[y][x] = {
+                type: selectedTool,
+                rotation: 0
+            };
+            inventory[selectedTool]--;
+            renderPipe(x, y);
+            updateUI();
+        }
+    }
+
+    function removePipe(x, y) {
+        if (isSimulating) return;
+        const existing = gridState[y][x];
+        if (existing) {
+            inventory[existing.type]++;
+            gridState[y][x] = null;
+            
+            // Remove SVG from DOM
+            const cell = getCell(x, y);
+            const svg = cell.querySelector('svg');
+            if (svg) svg.remove();
+            
+            // Re-add markers if overwritten visually
+            // (In this implementation, markers sit on top via z-index, so we just remove the pipe svg)
+            
+            updateUI();
+        }
+    }
+
+    function getCell(x, y) {
+        return document.querySelector(`.cell[data-x="${x}"][data-y="${y}"]`);
+    }
+
+    function renderPipe(x, y) {
+        const data = gridState[y][x];
+        if (!data) return;
+
+        const cell = getCell(x, y);
+        // Remove existing pipe svg
+        const existingSvg = cell.querySelector('.pipe-svg');
+        if (existingSvg) existingSvg.remove();
+
+        const def = PIPE_TYPES[data.type];
+        
+        // Create SVG
+        const svgns = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(svgns, "svg");
+        svg.setAttribute("viewBox", "0 0 100 100");
+        svg.classList.add("pipe-svg");
+        svg.style.transform = `rotate(${data.rotation}deg)`;
+        svg.innerHTML = def.svg; // Inject defined paths
+
+        cell.appendChild(svg);
+    }
+
+    function updateUI() {
+        document.getElementById('rot-val').innerText = rotationsLeft;
+        document.getElementById('count-straight').innerText = inventory.straight;
+        document.getElementById('count-elbow').innerText = inventory.elbow;
+        document.getElementById('count-tsplit').innerText = inventory.tsplit;
+    }
+
+    function showMessage(msg) {
+        const el = document.getElementById('status-msg');
+        el.innerText = msg;
+        setTimeout(() => el.innerText = '', 2000);
+    }
+
+    function resetGrid() {
+        if(isSimulating) {
+            // If strictly resetting, just reload page or clear state
+            location.reload(); 
+        } else {
+            // Clear board logic if needed, or simple reload
+            if(confirm("Clear board?")) location.reload();
+        }
+    }
+
+    // --- Simulation Logic ---
+
+    /* 
+       Connectivity Logic:
+       Standard Bitmask: Top(1), Right(2), Bottom(4), Left(8)
+       We need to rotate the mask based on pipe rotation.
+    */
+    function getOpenings(pipeType, rotationDeg) {
+        const baseMask = PIPE_TYPES[pipeType].mask;
+        const shifts = rotationDeg / 90;
+        
+        // Rotate bitmask: (mask << shifts) | (mask >> (4 - shifts)) & 0xF (for 4 bits)
+        // Actually simpler: Rotate array of booleans.
+        // Let's stick to bits. 
+        // 0: Top, 1: Right, 2: Bottom, 3: Left
+        
+        let current = baseMask;
+        for(let i=0; i<shifts; i++) {
+            // Rotate bits right: 1010 -> 0101 (Right shift logic for clockwise visual rotation?)
+            // Visual Rotation is Clockwise. 
+            // If Top (1) rotates 90deg CW, it becomes Right (2).
+            // So we shift bits left. 1 (0001) becomes 2 (0010).
+            // 8 (1000) becomes 1 (0001).
+            let msb = (current & 8) ? 1 : 0;
+            current = ((current << 1) & 15) | msb;
+        }
+        return current;
+    }
+
+    function getOppositeDir(dir) {
+        // Top(1) <-> Bottom(4)
+        // Right(2) <-> Left(8)
+        if (dir === 1) return 4;
+        if (dir === 2) return 8;
+        if (dir === 4) return 1;
+        if (dir === 8) return 2;
+        return 0;
+    }
+
+    async function runSimulation() {
+        if (isSimulating) return;
+        isSimulating = true;
+        document.getElementById('run-btn').disabled = true;
+
+        // Reset visual flow
+        document.querySelectorAll('.cell').forEach(c => c.classList.remove('flowing'));
+        document.querySelectorAll('.outlet-marker').forEach(m => {
+            const xy = m.parentNode.dataset;
+            const target = LEVEL.outlets.find(o => o.x == xy.x && o.y == xy.y);
+            m.innerHTML = `TARGET<br>${target.required}`;
+            m.style.color = "#ff9900";
+        });
+
+        // Flow tracking
+        let flowMap = {}; // Key: "x,y", Value: flowAmount
+        let queue = []; 
+
+        // Initial Source Setup
+        // Check if there is a pipe at source
+        const sx = LEVEL.source.x;
+        const sy = LEVEL.source.y;
+        
+        if (!gridState[sy][sx]) {
+            endSimulation(false, "No pipe at source!");
+            return;
+        }
+
+        // Initialize Queue with Source
+        // Assuming source enters from "Top" virtually or simply fills the pipe at 0,0
+        // We treat the source as having 100 flow injected into the pipe at sx,sy
+        queue.push({ x: sx, y: sy, flow: LEVEL.source.amount, fromDir: 0, depth: 0 });
+
+        let finalResults = {}; // Store flow at outlets
+
+        // BFS Traversal
+        while(queue.length > 0) {
+            const curr = queue.shift();
+            const key = `${curr.x},${curr.y}`;
+            
+            // Avoid infinite loops in cycling pipes (simple visited check per direction?)
+            // For a puzzle, we simplify: add flow. If flow splits, we reduce amount.
+            
+            if (flowMap[key]) {
+                // Merge flow? (Advanced). For this puzzle, let's assume tree-like structure from source preferred
+                // or just overwriting for simplicity in visual.
+                // To keep it robust: if visited with same flow, skip.
+                continue; 
+            }
+            flowMap[key] = curr.flow;
+
+            // Visual Animation Trigger
+            const cell = getCell(curr.x, curr.y);
+            // Delay based on depth for propagation effect
+            setTimeout(() => {
+                cell.classList.add('flowing');
+            }, curr.depth * 300);
+
+            // Logic to find neighbors
+            const pipe = gridState[curr.y][curr.x];
+            const openings = getOpenings(pipe.type, pipe.rotation);
+
+            // Calculate number of valid outputs for splitting flow
+            // Valid output = Opening exists AND neighbor has connecting opening
+            let validNeighbors = [];
+
+            const checkDir = (dirBit, dx, dy, outputDirBit) => {
+                // 1. Do I have an opening this way?
+                if (!(openings & dirBit)) return;
+                
+                // 2. Did I come from here? (Don't flow back)
+                if (dirBit === curr.fromDir) return;
+
+                // 3. Is neighbor on grid?
+                const nx = curr.x + dx;
+                const ny = curr.y + dy;
+                if (nx < 0 || ny < 0 || nx >= GRID_SIZE || ny >= GRID_SIZE) return;
+
+                // 4. Does neighbor have connecting opening?
+                const nPipe = gridState[ny][nx];
+                if (!nPipe) return;
+                
+                const nOpenings = getOpenings(nPipe.type, nPipe.rotation);
+                // Neighbor must accept from opposite of my output
+                // My Top(1) -> Neighbor Bottom(4)
+                const requiredInput = getOppositeDir(dirBit);
+                
+                if (nOpenings & requiredInput) {
+                    validNeighbors.push({ x: nx, y: ny, dir: requiredInput }); // dir is where neighbor receives from
+                }
+            };
+
+            checkDir(1, 0, -1); // Top
+            checkDir(2, 1, 0);  // Right
+            checkDir(4, 0, 1);  // Bottom
+            checkDir(8, -1, 0); // Left
+
+            if (validNeighbors.length > 0) {
+                // T-Split Logic: Divide flow evenly
+                const flowPerBranch = curr.flow / validNeighbors.length;
+                
+                for (let neighbor of validNeighbors) {
+                    queue.push({
+                        x: neighbor.x,
+                        y: neighbor.y,
+                        flow: flowPerBranch,
+                        fromDir: neighbor.dir, // The direction entering the neighbor (bitmask)
+                        depth: curr.depth + 1
+                    });
+                }
+            }
+
+            // Check if this is an outlet
+            const outlet = LEVEL.outlets.find(o => o.x === curr.x && o.y === curr.y);
+            if (outlet) {
+                // Store result
+                // We use timeout to update text to sync with animation
+                setTimeout(() => {
+                    const marker = document.getElementById(`outlet-${curr.x}-${curr.y}`);
+                    marker.innerHTML = `TARGET: ${outlet.required}<br>ACTUAL: <span style="color:white">${curr.flow}</span>`;
+                    
+                    // Visual check
+                    if (Math.abs(curr.flow - outlet.required) < 0.1) {
+                        marker.style.color = "#00ff88"; // Green match
+                    } else {
+                        marker.style.color = "#ff4444"; // Red mismatch
+                    }
+                }, curr.depth * 300);
+                
+                finalResults[`${curr.x},${curr.y}`] = curr.flow;
+            }
+        }
+
+        // Calculate Max Depth for end condition check delay
+        // Just arbitrarily wait 3 seconds or calculate max depth
+        setTimeout(() => {
+            validateResults(finalResults);
+        }, 3000);
+    }
+
+    function validateResults(results) {
+        let success = true;
+        let failReason = "";
+
+        for (let outlet of LEVEL.outlets) {
+            const key = `${outlet.x},${outlet.y}`;
+            const actual = results[key] || 0;
+            if (Math.abs(actual - outlet.required) > 0.1) {
+                success = false;
+                failReason = `Outlet at (${outlet.x}, ${outlet.y}) needs ${outlet.required}, got ${actual}.`;
+            }
+        }
+
+        if (success) {
+            endSimulation(true, "All Target Flows Achieved!");
+        } else {
+            endSimulation(false, failReason || "Flow did not reach all targets.");
+        }
+    }
+
+    function endSimulation(win, msg) {
+        const modal = document.getElementById('modal');
+        const title = document.getElementById('modal-title');
+        const txt = document.getElementById('modal-msg');
+        
+        if (win) {
+            title.innerText = "Level Complete!";
+            title.style.color = "#00ff88";
+        } else {
+            title.innerText = "Simulation Failed";
+            title.style.color = "#ff4444";
+        }
+        txt.innerText = msg;
+        modal.style.display = "flex";
+        
+        document.getElementById('run-btn').disabled = false;
+        isSimulating = false;
+    }
+
+    function closeModal() {
+        document.getElementById('modal').style.display = "none";
+        // Optional: Remove flows
+        // document.querySelectorAll('.cell').forEach(c => c.classList.remove('flowing'));
+    }
+
+    // Start
+    init();
+
+</script>
+</body>
+</html>

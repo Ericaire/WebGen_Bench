@@ -1,0 +1,896 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Void Architect: Strategic Dodger</title>
+    <style>
+        :root {
+            --bg-color: #0f111a;
+            --panel-bg: #1a1d29;
+            --accent: #00f0ff;
+            --accent-dim: #00f0ff44;
+            --danger: #ff2a2a;
+            --success: #2aff55;
+            --text-main: #e0e6ed;
+            --border: 1px solid #333a4d;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        /* --- UI Overlay System --- */
+        #game-container {
+            position: relative;
+            width: 1024px;
+            height: 768px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            background: #000;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 17, 26, 0.95);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+        }
+
+        .ui-screen.active {
+            display: flex;
+        }
+
+        h1 { font-size: 3rem; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 4px; color: var(--accent); text-shadow: 0 0 10px var(--accent-dim); }
+        h2 { margin-top: 0; color: #8892b0; font-weight: 300; }
+        
+        button {
+            background: var(--accent-dim);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.2s;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background: var(--accent);
+            color: #000;
+            box-shadow: 0 0 20px var(--accent);
+        }
+
+        /* --- Hangar Specific UI --- */
+        #hangar-layout {
+            display: flex;
+            gap: 40px;
+            align-items: flex-start;
+            margin-top: 20px;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: var(--border);
+            padding: 20px;
+            border-radius: 4px;
+        }
+
+        /* Module Grid */
+        #ship-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            grid-template-rows: repeat(3, 80px);
+            gap: 10px;
+            background-image: radial-gradient(circle, #333 1px, transparent 1px);
+            background-size: 20px 20px;
+            padding: 20px;
+            border: 1px dashed #444;
+            position: relative;
+        }
+
+        /* The center slot represents the core, cannot be empty effectively, but we visualize it */
+        .grid-slot {
+            width: 80px;
+            height: 80px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid #444;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border 0.2s;
+        }
+
+        .grid-slot.drag-over { border-color: var(--success); background: rgba(42, 255, 85, 0.1); }
+        
+        /* Modules */
+        .module {
+            width: 70px;
+            height: 70px;
+            background: #2a2e3d;
+            border: 1px solid #555;
+            cursor: grab;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            text-align: center;
+            user-select: none;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .module:active { cursor: grabbing; }
+        .module strong { display: block; margin-bottom: 4px; color: #fff; }
+        .module span { font-size: 0.6rem; color: #aaa; }
+        
+        /* Module Types Colors */
+        .mod-engine { border-top: 3px solid var(--accent); }
+        .mod-weapon { border-top: 3px solid var(--danger); }
+        .mod-shield { border-top: 3px solid var(--success); }
+        .mod-utility { border-top: 3px solid #f0f; }
+
+        /* Inventory */
+        #inventory {
+            display: grid;
+            grid-template-columns: repeat(2, 70px);
+            gap: 10px;
+            min-height: 200px;
+        }
+
+        /* Stats Panel */
+        #stats-display {
+            width: 200px;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+        }
+        .stat-val { font-weight: bold; color: var(--accent); }
+
+        /* --- HUD --- */
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            pointer-events: none;
+            display: none; /* Active only during game */
+            justify-content: space-between;
+            font-size: 1.2rem;
+            text-shadow: 1px 1px 2px #000;
+        }
+
+        .hud-bar-container {
+            width: 200px;
+            height: 20px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid #555;
+            margin-top: 5px;
+        }
+        .hud-bar-fill { height: 100%; transition: width 0.2s; }
+        #health-fill { background: var(--danger); width: 100%; }
+        #shield-fill { background: var(--accent); width: 100%; }
+
+        #level-indicator {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            font-size: 2rem;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="game-canvas" width="1024" height="768"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+        <div id="stats-left">
+            <div>INTEGRITY</div>
+            <div class="hud-bar-container"><div id="health-fill" class="hud-bar-fill"></div></div>
+            <div style="margin-top:10px;">SHIELD</div>
+            <div class="hud-bar-container"><div id="shield-fill" class="hud-bar-fill"></div></div>
+        </div>
+        <div id="level-indicator">SECTOR 1</div>
+        <div id="stats-right">
+            <div>PROGRESS: <span id="progress-val">0%</span></div>
+            <div>SCORE: <span id="score-val">0</span></div>
+        </div>
+    </div>
+
+    <!-- Hangar Screen -->
+    <div id="screen-hangar" class="ui-screen active">
+        <h1>Void Hangar</h1>
+        <h2>Configure your interceptor</h2>
+        
+        <div id="hangar-layout">
+            <!-- Inventory -->
+            <div class="panel">
+                <h3 style="margin-top:0">Modules</h3>
+                <div id="inventory">
+                    <!-- Populated by JS -->
+                </div>
+                <div style="margin-top:15px; font-size:0.8rem; color:#666;">Drag modules to the ship grid.<br>Center is Core (Required).</div>
+            </div>
+
+            <!-- Ship Grid -->
+            <div class="panel">
+                <div id="ship-grid">
+                    <!-- 3x3 Grid -->
+                    <div class="grid-slot" data-index="0"></div>
+                    <div class="grid-slot" data-index="1"></div>
+                    <div class="grid-slot" data-index="2"></div>
+                    <div class="grid-slot" data-index="3"></div>
+                    <div class="grid-slot" data-index="4" style="border-color:var(--accent);"></div> <!-- Center -->
+                    <div class="grid-slot" data-index="5"></div>
+                    <div class="grid-slot" data-index="6"></div>
+                    <div class="grid-slot" data-index="7"></div>
+                    <div class="grid-slot" data-index="8"></div>
+                </div>
+            </div>
+
+            <!-- Stats -->
+            <div class="panel" id="stats-display">
+                <h3 style="margin-top:0">Ship Specs</h3>
+                <div class="stat-row"><span>Speed</span><span id="stat-speed" class="stat-val">0</span></div>
+                <div class="stat-row"><span>Handling</span><span id="stat-turn" class="stat-val">0</span></div>
+                <div class="stat-row"><span>Firepower</span><span id="stat-dmg" class="stat-val">0</span></div>
+                <div class="stat-row"><span>Fire Rate</span><span id="stat-rate" class="stat-val">0</span></div>
+                <div class="stat-row"><span>Shields</span><span id="stat-shield" class="stat-val">0</span></div>
+                <div class="stat-row"><span>Hull</span><span id="stat-hull" class="stat-val">0</span></div>
+            </div>
+        </div>
+
+        <button id="btn-launch">Launch Mission</button>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="screen-gameover" class="ui-screen">
+        <h1 style="color:var(--danger)">Critical Failure</h1>
+        <h2 id="final-score">Score: 0</h2>
+        <button onclick="location.reload()">Return to Hangar</button>
+    </div>
+
+    <!-- Victory Screen -->
+    <div id="screen-victory" class="ui-screen">
+        <h1 style="color:var(--success)">Sector Cleared</h1>
+        <h2>All systems nominal</h2>
+        <button id="btn-next-level">Next Sector</button>
+    </div>
+    
+    <!-- Final Win Screen -->
+    <div id="screen-complete" class="ui-screen">
+        <h1 style="color:var(--accent)">Galaxy Secured</h1>
+        <h2>You are the master of the void.</h2>
+        <h2 id="complete-score">Final Score: 0</h2>
+        <button onclick="location.reload()">Reset Simulation</button>
+    </div>
+</div>
+
+<script>
+    /**
+     * GAME ARCHITECTURE
+     * 1. Data Definitions (Modules, Levels)
+     * 2. State Management (Ship config, Game State)
+     * 3. Hangar Logic (Drag & Drop, Persistence)
+     * 4. Game Engine (Canvas loop, Physics, Entity Management)
+     */
+
+    // --- 1. CONFIGURATION & DATA ---
+
+    const MODULE_TYPES = {
+        ENGINE_MK1: { id: 'eng1', name: 'Ion Drive', type: 'engine', stats: { speed: 1.5, turn: 0.05, shield: 0, damage: 0, rate: 0, hull: 0 }, desc: 'Balanced thrust' },
+        ENGINE_MK2: { id: 'eng2', name: 'Agile Thruster', type: 'engine', stats: { speed: 2.5, turn: 0.08, shield: -10, damage: 0, rate: 0, hull: -10 }, desc: 'Fast but fragile' },
+        LASER_PULSE: { id: 'wep1', name: 'Pulse Laser', type: 'weapon', stats: { speed: 0, turn: 0, shield: 0, damage: 10, rate: 5, hull: 0 }, desc: 'Standard issue' },
+        LASER_BEAM: { id: 'wep2', name: 'Heavy Cannon', type: 'weapon', stats: { speed: -0.2, turn: -0.01, shield: 0, damage: 25, rate: 1.5, hull: 0 }, desc: 'Slow, heavy hit' },
+        SHIELD_GEN: { id: 'shd1', name: 'Force Field', type: 'shield', stats: { speed: -0.1, turn: 0, shield: 50, damage: 0, rate: 0, hull: 0 }, desc: '+50 Shield' },
+        HULL_PLATE: { id: 'utl1', name: 'Titanium Plate', type: 'utility', stats: { speed: -0.3, turn: -0.02, shield: 0, damage: 0, rate: 0, hull: 100 }, desc: '+100 Hull' },
+        CORE: { id: 'core', name: 'Reactor Core', type: 'utility', stats: { speed: 2, turn: 0.05, shield: 20, damage: 0, rate: 0, hull: 100 }, desc: 'Required' } // Base stats
+    };
+
+    const LEVELS = [
+        { id: 1, duration: 20, spawnRate: 1200, meteorSpeed: 2, name: 'Asteroid Belt' },
+        { id: 2, duration: 30, spawnRate: 800, meteorSpeed: 3.5, name: 'Debris Field' },
+        { id: 3, duration: 40, spawnRate: 400, meteorSpeed: 5, name: 'Chaotic Storm' }
+    ];
+
+    // --- 2. STATE MANAGEMENT ---
+
+    let currentLevelIdx = 0;
+    let score = 0;
+    
+    // Grid: 9 slots. Index 4 is center.
+    // We store module IDs in this array.
+    let shipConfig = new Array(9).fill(null);
+    shipConfig[4] = 'core'; // Center is always core
+
+    // Derived stats
+    let shipStats = {}; 
+
+    // Game Runtime State
+    let gameRunning = false;
+    let canvas, ctx;
+    let lastTime = 0;
+    let entities = { player: null, meteors: [], bullets: [], particles: [] };
+    let keys = {};
+    let levelTimer = 0;
+    let spawnTimer = 0;
+    
+    // --- 3. HANGAR UI LOGIC ---
+
+    function initHangar() {
+        // Load from LocalStorage
+        const savedConfig = localStorage.getItem('voidDodgerConfig');
+        if (savedConfig) {
+            try {
+                const parsed = JSON.parse(savedConfig);
+                // Validate size
+                if (parsed.length === 9) shipConfig = parsed;
+                shipConfig[4] = 'core'; // Ensure core exists
+            } catch (e) { console.error("Save file corrupted"); }
+        }
+
+        renderInventory();
+        renderGrid();
+        updateStats();
+
+        // Bind Launch Button
+        document.getElementById('btn-launch').addEventListener('click', () => {
+            document.getElementById('screen-hangar').classList.remove('active');
+            startGame(currentLevelIdx);
+        });
+
+        // Bind Next Level Button
+        document.getElementById('btn-next-level').addEventListener('click', () => {
+            document.getElementById('screen-victory').classList.remove('active');
+            currentLevelIdx++;
+            if (currentLevelIdx < LEVELS.length) {
+                startGame(currentLevelIdx);
+            } else {
+                showComplete();
+            }
+        });
+    }
+
+    function renderInventory() {
+        const container = document.getElementById('inventory');
+        container.innerHTML = '';
+        
+        // Available modules (Infinite supply for customization simplicity)
+        const inventoryItems = ['eng1', 'eng2', 'wep1', 'wep2', 'shd1', 'utl1'];
+        
+        inventoryItems.forEach(id => {
+            const def = Object.values(MODULE_TYPES).find(m => m.id === id);
+            const el = document.createElement('div');
+            el.className = `module mod-${def.type}`;
+            el.draggable = true;
+            el.innerHTML = `<strong>${def.name}</strong><span>${def.desc}</span>`;
+            
+            el.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', def.id);
+                e.dataTransfer.effectAllowed = 'copy';
+            });
+            
+            container.appendChild(el);
+        });
+    }
+
+    function renderGrid() {
+        const slots = document.querySelectorAll('.grid-slot');
+        slots.forEach(slot => {
+            const idx = parseInt(slot.dataset.index);
+            slot.innerHTML = ''; // Clear
+
+            // Core logic
+            if (idx === 4) {
+                slot.innerHTML = `<div class="module mod-utility" style="cursor:default; border-color: gold;"><strong>CORE</strong></div>`;
+                return;
+            }
+
+            // Render equipped
+            const moduleId = shipConfig[idx];
+            if (moduleId) {
+                const def = Object.values(MODULE_TYPES).find(m => m.id === moduleId);
+                const el = document.createElement('div');
+                el.className = `module mod-${def.type}`;
+                el.draggable = true;
+                el.innerHTML = `<strong>${def.name}</strong>`;
+                
+                // Allow dragging OUT of grid (removal)
+                el.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('source_index', idx);
+                    e.dataTransfer.effectAllowed = 'move';
+                });
+
+                // Right click to remove
+                el.addEventListener('contextmenu', (e) => {
+                    e.preventDefault();
+                    shipConfig[idx] = null;
+                    saveConfig();
+                    renderGrid();
+                    updateStats();
+                });
+
+                slot.appendChild(el);
+            }
+
+            // Drag Over Logic
+            slot.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                slot.classList.add('drag-over');
+            });
+            
+            slot.addEventListener('dragleave', () => {
+                slot.classList.remove('drag-over');
+            });
+
+            slot.addEventListener('drop', (e) => {
+                e.preventDefault();
+                slot.classList.remove('drag-over');
+
+                const sourceIndex = e.dataTransfer.getData('source_index');
+                const moduleType = e.dataTransfer.getData('text/plain');
+
+                if (sourceIndex) {
+                    // Moving within grid
+                    const item = shipConfig[sourceIndex];
+                    shipConfig[sourceIndex] = null;
+                    shipConfig[idx] = item;
+                } else if (moduleType) {
+                    // New item from inventory
+                    shipConfig[idx] = moduleType;
+                }
+
+                saveConfig();
+                renderGrid();
+                updateStats();
+            });
+        });
+    }
+
+    function updateStats() {
+        // Base stats
+        let stats = { ...MODULE_TYPES.CORE.stats };
+
+        // Aggregate
+        shipConfig.forEach((modId, i) => {
+            if (modId && i !== 4) { // Core already added
+                const def = Object.values(MODULE_TYPES).find(m => m.id === modId);
+                stats.speed += def.stats.speed;
+                stats.turn += def.stats.turn;
+                stats.shield += def.stats.shield;
+                stats.damage += def.stats.damage;
+                stats.rate += def.stats.rate;
+                stats.hull += def.stats.hull;
+            }
+        });
+
+        // Clamping min values
+        stats.speed = Math.max(0.5, stats.speed);
+        stats.turn = Math.max(0.01, stats.turn);
+        stats.rate = Math.max(0, stats.rate);
+
+        shipStats = stats;
+
+        // UI Update
+        document.getElementById('stat-speed').innerText = stats.speed.toFixed(1);
+        document.getElementById('stat-turn').innerText = stats.turn.toFixed(2);
+        document.getElementById('stat-dmg').innerText = stats.damage;
+        document.getElementById('stat-rate').innerText = stats.rate;
+        document.getElementById('stat-shield').innerText = stats.shield;
+        document.getElementById('stat-hull').innerText = stats.hull;
+    }
+
+    function saveConfig() {
+        localStorage.setItem('voidDodgerConfig', JSON.stringify(shipConfig));
+    }
+
+    // --- 4. GAME ENGINE & PHYSICS ---
+
+    function startGame(levelIdx) {
+        gameRunning = true;
+        canvas = document.getElementById('game-canvas');
+        ctx = canvas.getContext('2d');
+        
+        // Reset Inputs
+        keys = {};
+
+        // HUD Setup
+        document.getElementById('hud').style.display = 'flex';
+        const levelData = LEVELS[levelIdx];
+        document.getElementById('level-indicator').innerText = `SECTOR ${levelIdx + 1}: ${levelData.name}`;
+
+        // Initialize Player
+        entities.player = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            vx: 0,
+            vy: 0,
+            angle: -Math.PI / 2, // Facing up
+            radius: 15,
+            hp: shipStats.hull,
+            maxHp: shipStats.hull,
+            shield: shipStats.shield,
+            maxShield: shipStats.shield,
+            cooldown: 0
+        };
+
+        entities.meteors = [];
+        entities.bullets = [];
+        entities.particles = [];
+
+        levelTimer = 0;
+        spawnTimer = 0;
+
+        lastTime = performance.now();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function gameLoop(timestamp) {
+        if (!gameRunning) return;
+
+        const dt = (timestamp - lastTime) / 1000;
+        lastTime = timestamp;
+
+        update(dt);
+        draw();
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    function update(dt) {
+        const player = entities.player;
+        const levelData = LEVELS[currentLevelIdx];
+
+        // 1. Level Logic
+        levelTimer += dt;
+        const progress = Math.min(100, (levelTimer / levelData.duration) * 100);
+        document.getElementById('progress-val').innerText = Math.floor(progress) + '%';
+        
+        if (levelTimer >= levelData.duration) {
+            endLevel(true);
+            return;
+        }
+
+        // Spawning
+        spawnTimer += dt * 1000;
+        if (spawnTimer > levelData.spawnRate) {
+            spawnMeteor(levelData.meteorSpeed);
+            spawnTimer = 0;
+        }
+
+        // 2. Player Physics (Momentum)
+        if (keys['ArrowLeft'] || keys['a']) player.angle -= shipStats.turn;
+        if (keys['ArrowRight'] || keys['d']) player.angle += shipStats.turn;
+
+        if (keys['ArrowUp'] || keys['w']) {
+            player.vx += Math.cos(player.angle) * (shipStats.speed * 10) * dt;
+            player.vy += Math.sin(player.angle) * (shipStats.speed * 10) * dt;
+            spawnParticle(player.x - Math.cos(player.angle)*15, player.y - Math.sin(player.angle)*15, 'orange', 5);
+        }
+
+        // Friction/Drag in space
+        player.vx *= 0.98;
+        player.vy *= 0.98;
+
+        player.x += player.vx;
+        player.y += player.vy;
+
+        // Screen Wrap
+        if (player.x < 0) player.x = canvas.width;
+        if (player.x > canvas.width) player.x = 0;
+        if (player.y < 0) player.y = canvas.height;
+        if (player.y > canvas.height) player.y = 0;
+
+        // 3. Shooting
+        if (shipStats.damage > 0) {
+            player.cooldown -= dt;
+            // Auto fire if we have weapons
+            if (player.cooldown <= 0) {
+                spawnBullet();
+                player.cooldown = 1 / (shipStats.rate || 1);
+            }
+        }
+
+        // 4. Bullets
+        for (let i = entities.bullets.length - 1; i >= 0; i--) {
+            let b = entities.bullets[i];
+            b.life -= dt;
+            b.x += b.vx;
+            b.y += b.vy;
+            if (b.life <= 0) entities.bullets.splice(i, 1);
+        }
+
+        // 5. Meteors
+        for (let i = entities.meteors.length - 1; i >= 0; i--) {
+            let m = entities.meteors[i];
+            m.x += m.vx;
+            m.y += m.vy;
+            m.angle += m.spin;
+
+            // Wrap meteors too
+            if (m.x < -50) m.x = canvas.width + 50;
+            if (m.x > canvas.width + 50) m.x = -50;
+            if (m.y < -50) m.y = canvas.height + 50;
+            if (m.y > canvas.height + 50) m.y = -50;
+
+            // Collision Player vs Meteor
+            const dx = player.x - m.x;
+            const dy = player.y - m.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            
+            if (dist < player.radius + m.radius) {
+                damagePlayer(20); // Hardcoded meteor damage
+                destroyMeteor(i);
+                continue;
+            }
+
+            // Collision Bullet vs Meteor
+            for (let j = entities.bullets.length - 1; j >= 0; j--) {
+                let b = entities.bullets[j];
+                const bdx = b.x - m.x;
+                const bdy = b.y - m.y;
+                const bdist = Math.sqrt(bdx*bdx + bdy*bdy);
+
+                if (bdist < m.radius + 5) {
+                    m.hp -= shipStats.damage;
+                    entities.bullets.splice(j, 1);
+                    spawnParticle(b.x, b.y, 'cyan', 3);
+                    if (m.hp <= 0) {
+                        score += 100;
+                        destroyMeteor(i);
+                        break; // Meteor gone
+                    }
+                }
+            }
+        }
+
+        // 6. Particles
+        for (let i = entities.particles.length - 1; i >= 0; i--) {
+            let p = entities.particles[i];
+            p.life -= dt;
+            p.x += p.vx;
+            p.y += p.vy;
+            if (p.life <= 0) entities.particles.splice(i, 1);
+        }
+
+        // UI Updates
+        updateHud();
+    }
+
+    function updateHud() {
+        const p = entities.player;
+        const hpPct = Math.max(0, (p.hp / p.maxHp) * 100);
+        const shdPct = p.maxShield > 0 ? Math.max(0, (p.shield / p.maxShield) * 100) : 0;
+        
+        document.getElementById('health-fill').style.width = hpPct + '%';
+        document.getElementById('shield-fill').style.width = shdPct + '%';
+        document.getElementById('score-val').innerText = score;
+    }
+
+    function spawnMeteor(speedMult) {
+        // Spawn edge logic
+        const side = Math.floor(Math.random() * 4);
+        let x, y, vx, vy;
+        const speed = (Math.random() * 1 + 1) * speedMult;
+
+        if (side === 0) { x = Math.random() * canvas.width; y = -40; vy = speed; vx = (Math.random()-0.5)*2; } // Top
+        if (side === 1) { x = Math.random() * canvas.width; y = canvas.height + 40; vy = -speed; vx = (Math.random()-0.5)*2; } // Bottom
+        if (side === 2) { x = -40; y = Math.random() * canvas.height; vx = speed; vy = (Math.random()-0.5)*2; } // Left
+        if (side === 3) { x = canvas.width + 40; y = Math.random() * canvas.height; vx = -speed; vy = (Math.random()-0.5)*2; } // Right
+
+        entities.meteors.push({
+            x, y, vx, vy,
+            radius: 20 + Math.random() * 15,
+            angle: 0,
+            spin: (Math.random() - 0.5) * 0.1,
+            hp: 30, // Base meteor HP
+            maxHp: 30
+        });
+    }
+
+    function spawnBullet() {
+        const p = entities.player;
+        entities.bullets.push({
+            x: p.x + Math.cos(p.angle) * 20,
+            y: p.y + Math.sin(p.angle) * 20,
+            vx: Math.cos(p.angle) * 10,
+            vy: Math.sin(p.angle) * 10,
+            life: 2
+        });
+    }
+
+    function spawnParticle(x, y, color, count) {
+        for(let i=0; i<count; i++) {
+            entities.particles.push({
+                x: x, y: y,
+                vx: (Math.random() - 0.5) * 4,
+                vy: (Math.random() - 0.5) * 4,
+                life: 0.5 + Math.random() * 0.5,
+                color: color
+            });
+        }
+    }
+
+    function destroyMeteor(idx) {
+        const m = entities.meteors[idx];
+        spawnParticle(m.x, m.y, '#888', 10);
+        entities.meteors.splice(idx, 1);
+    }
+
+    function damagePlayer(amount) {
+        const p = entities.player;
+        
+        // Shield absorb
+        if (p.shield > 0) {
+            p.shield -= amount;
+            if (p.shield < 0) {
+                p.hp += p.shield; // Overflow damage to hull
+                p.shield = 0;
+            }
+        } else {
+            p.hp -= amount;
+        }
+
+        spawnParticle(p.x, p.y, 'red', 5);
+
+        if (p.hp <= 0) {
+            endLevel(false);
+        }
+    }
+
+    // --- DRAWING ---
+
+    function draw() {
+        // Clear
+        ctx.fillStyle = '#0f111a';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw Stars (Procedural simple background)
+        ctx.fillStyle = '#fff';
+        for(let i=0; i<50; i++) {
+            // Pseudo-random based on time to make it static relative to screen but moving? 
+            // Keep it static for performance/simplicity
+            let sx = (i * 137) % canvas.width;
+            let sy = (i * 243) % canvas.height;
+            ctx.fillRect(sx, sy, 1, 1);
+        }
+
+        // Draw Player
+        const p = entities.player;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+        
+        // Ship Body
+        ctx.beginPath();
+        ctx.moveTo(15, 0);
+        ctx.lineTo(-10, 10);
+        ctx.lineTo(-5, 0);
+        ctx.lineTo(-10, -10);
+        ctx.closePath();
+        ctx.fillStyle = '#ccc';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+
+        // Engine Flame
+        if (keys['ArrowUp'] || keys['w']) {
+            ctx.beginPath();
+            ctx.moveTo(-10, 0);
+            ctx.lineTo(-20 - Math.random()*10, 0);
+            ctx.strokeStyle = 'orange';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Shield Bubble
+        if (p.shield > 0) {
+            ctx.beginPath();
+            ctx.arc(0,0, 22, 0, Math.PI*2);
+            ctx.strokeStyle = `rgba(0, 240, 255, ${p.shield/p.maxShield})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+
+        // Draw Meteors
+        entities.meteors.forEach(m => {
+            ctx.save();
+            ctx.translate(m.x, m.y);
+            ctx.rotate(m.angle);
+            ctx.beginPath();
+            // Draw rough asteroid shape (circle for logic, poly for visual)
+            const steps = 6;
+            for(let i=0; i<steps; i++) {
+                const a = (i/steps) * Math.PI * 2;
+                const r = m.radius * (0.8 + Math.random()*0.05); // jittery look
+                const px = Math.cos(a) * r;
+                const py = Math.sin(a) * r;
+                if (i===0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fillStyle = '#555';
+            ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.stroke();
+            ctx.restore();
+        });
+
+        // Draw Bullets
+        ctx.fillStyle = '#0f0';
+        entities.bullets.forEach(b => {
+            ctx.beginPath();
+            ctx.arc(b.x, b.y, 3, 0, Math.PI*2);
+            ctx.fill();
+        });
+
+        // Draw Particles
+        entities.particles.forEach(pt => {
+            ctx.globalAlpha = pt.life;
+            ctx.fillStyle = pt.color;
+            ctx.fillRect(pt.x, pt.y, 3, 3);
+            ctx.globalAlpha = 1;
+        });
+    }
+
+    // --- GAME CONTROL ---
+
+    function endLevel(win) {
+        gameRunning = false;
+        document.getElementById('hud').style.display = 'none';
+
+        if (win) {
+            document.getElementById('screen-victory').classList.add('active');
+        } else {
+            document.getElementById('final-score').innerText = "Score: " + score;
+            document.getElementById('screen-gameover').classList.add('active');
+        }
+    }
+
+    function showComplete() {
+        document.getElementById('screen-complete').classList.add('active');
+        document.getElementById('complete-score').innerText = "Final Score: " + score;
+    }
+
+    // Input Handling
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    // Start
+    initHangar();
+
+</script>
+</body>
+</html>

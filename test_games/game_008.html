@@ -1,0 +1,580 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RailDispatch: Collision Avoidance System</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: rgba(22, 27, 34, 0.9);
+            --text-color: #c9d1d9;
+            --accent-green: #238636;
+            --accent-red: #da3633;
+            --accent-blue: #58a6ff;
+            --track-color: #30363d;
+            --track-active: #8b949e;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--text-color);
+            user-select: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* UI Overlays */
+        .ui-panel {
+            position: absolute;
+            padding: 15px;
+            background: var(--panel-bg);
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            pointer-events: none; /* Let clicks pass through to canvas */
+        }
+
+        #stats-panel {
+            top: 20px;
+            left: 20px;
+            min-width: 200px;
+        }
+
+        #controls-panel {
+            bottom: 20px;
+            left: 20px;
+            font-size: 0.9em;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Modal */
+        #modal-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-content {
+            background: var(--panel-bg);
+            border: 1px solid var(--accent-blue);
+            padding: 40px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.2);
+            max-width: 400px;
+        }
+
+        h1 { margin-top: 0; color: var(--accent-blue); }
+        h2 { margin-top: 0; }
+        
+        button {
+            background-color: var(--accent-green);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-weight: bold;
+            pointer-events: auto;
+        }
+
+        button:hover { background-color: #2ea043; }
+        button.danger { background-color: var(--accent-red); }
+        button.danger:hover { background-color: #f85149; }
+
+        .hidden { display: none !important; }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-top: 5px;
+        }
+        .dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; }
+        .dot.green { background: #3fb950; }
+        .dot.red { background: #f85149; }
+        .dot.train { background: #58a6ff; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="simCanvas"></canvas>
+
+    <div id="stats-panel" class="ui-panel">
+        <div class="stat-row">
+            <span>Status:</span>
+            <span id="system-status" class="stat-value" style="color: #3fb950">ONLINE</span>
+        </div>
+        <div class="stat-row">
+            <span>Trains:</span>
+            <span id="train-count" class="stat-value">0</span>
+        </div>
+        <div class="stat-row">
+            <span>Score:</span>
+            <span id="score-val" class="stat-value">0</span>
+        </div>
+    </div>
+
+    <div id="controls-panel" class="ui-panel">
+        <strong>Dispatch Controls</strong>
+        <div class="legend-item"><div class="dot green"></div> Click Signal to Toggle</div>
+        <div class="legend-item"><div class="dot red"></div> Red = Stop</div>
+        <div class="legend-item"><div class="dot train"></div> Avoid Collisions</div>
+    </div>
+
+    <div id="modal-overlay">
+        <div class="modal-content" id="start-screen">
+            <h1>RailDispatch OS</h1>
+            <p>Manage the network signals. Route trains safely. Do not allow collisions.</p>
+            <button onclick="game.start()">Initialize System</button>
+        </div>
+        <div class="modal-content hidden" id="game-over-screen">
+            <h1 style="color: var(--accent-red)">CRITICAL FAILURE</h1>
+            <p>Collision Detected. System Halted.</p>
+            <p>Final Score: <span id="final-score">0</span></p>
+            <button class="danger" onclick="game.reset()">Reboot System</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/**
+ * MATH & UTILS
+ */
+const distance = (x1, y1, x2, y2) => Math.sqrt((x2-x1)**2 + (y2-y1)**2);
+
+// Quadratic Bezier interpolation for curved tracks
+function getBezierPoint(t, p0, p1, p2) {
+    const x = (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x;
+    const y = (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y;
+    return { x, y };
+}
+
+/**
+ * CLASSES
+ */
+
+class Node {
+    constructor(id, x, y, isStation = false) {
+        this.id = id;
+        this.x = x;
+        this.y = y;
+        this.isStation = isStation;
+        // Connections out of this node
+        this.connections = []; 
+    }
+}
+
+class TrackSegment {
+    constructor(startNode, endNode, controlPoint) {
+        this.startNode = startNode;
+        this.endNode = endNode;
+        // Control point for Bezier curve (if null, straight line)
+        this.controlPoint = controlPoint || { x: (startNode.x + endNode.x)/2, y: (startNode.y + endNode.y)/2 };
+        
+        // Signal state: true = Green (Go), false = Red (Stop)
+        this.signalOpen = false; // Default to red for safety
+        
+        // Calculate rough length for speed normalization
+        const d1 = distance(startNode.x, startNode.y, this.controlPoint.x, this.controlPoint.y);
+        const d2 = distance(this.controlPoint.x, this.controlPoint.y, endNode.x, endNode.y);
+        this.length = d1 + d2;
+    }
+
+    draw(ctx, isHovered) {
+        // Draw Track
+        ctx.beginPath();
+        ctx.moveTo(this.startNode.x, this.startNode.y);
+        ctx.quadraticCurveTo(this.controlPoint.x, this.controlPoint.y, this.endNode.x, this.endNode.y);
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = '#30363d';
+        ctx.stroke();
+
+        // Draw Rail Highlights
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = isHovered ? '#58a6ff' : '#484f58';
+        ctx.stroke();
+
+        // Draw Signal
+        // Signal is located 10% into the track from the start
+        const signalPos = getBezierPoint(0.1, this.startNode, this.controlPoint, this.endNode);
+        
+        ctx.beginPath();
+        ctx.arc(signalPos.x, signalPos.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = this.signalOpen ? '#3fb950' : '#f85149';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#fff';
+        ctx.stroke();
+
+        // Save signal position for click detection
+        this.signalHitbox = { x: signalPos.x, y: signalPos.y, r: 15 };
+    }
+}
+
+class Train {
+    constructor(id, startNode, color) {
+        this.id = id;
+        this.color = color;
+        this.width = 20;
+        this.length = 36;
+        
+        // State
+        this.currentNode = startNode;
+        this.currentTrack = null;
+        this.progress = 0; // 0.0 to 1.0 along track
+        this.speed = 0;
+        this.maxSpeed = 0.0008; // Normalized speed (progress per tick)
+        this.state = 'IDLE'; // IDLE, MOVING, WAITING
+        
+        this.pickNextTrack();
+    }
+
+    pickNextTrack() {
+        if (!this.currentNode) return;
+        
+        const opts = this.currentNode.connections;
+        if (opts.length === 0) {
+            // End of line, despawn logic handled in Game
+            this.state = 'FINISHED';
+            return;
+        }
+
+        // Randomly choose a path (User must manage signals to guide them)
+        const randIndex = Math.floor(Math.random() * opts.length);
+        this.currentTrack = opts[randIndex];
+        this.progress = 0;
+        this.state = 'WAITING';
+    }
+
+    update(dt) {
+        if (this.state === 'FINISHED') return;
+
+        // Check Signal
+        if (this.progress < 0.15 && !this.currentTrack.signalOpen) {
+            // Decelerate to stop at signal
+            this.speed = Math.max(0, this.speed - 0.00005 * dt);
+            this.state = 'WAITING';
+        } else {
+            // Accelerate
+            this.speed = Math.min(this.maxSpeed, this.speed + 0.00002 * dt);
+            this.state = 'MOVING';
+        }
+
+        // Apply movement normalized by track length (to keep constant visual speed)
+        // Longer tracks need smaller progress increment
+        const speedFactor = 200 / this.currentTrack.length; 
+        this.progress += this.speed * dt * speedFactor;
+
+        // Track completion
+        if (this.progress >= 1.0) {
+            this.currentNode = this.currentTrack.endNode;
+            this.pickNextTrack();
+        }
+    }
+
+    draw(ctx) {
+        if (!this.currentTrack) return;
+
+        const pos = getBezierPoint(this.progress, this.currentTrack.startNode, this.currentTrack.controlPoint, this.currentTrack.endNode);
+        
+        // Calculate rotation (derivative of quadratic bezier)
+        const t = this.progress;
+        const p0 = this.currentTrack.startNode;
+        const p1 = this.currentTrack.controlPoint;
+        const p2 = this.currentTrack.endNode;
+        
+        const tx = 2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x);
+        const ty = 2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y);
+        const angle = Math.atan2(ty, tx);
+
+        ctx.save();
+        ctx.translate(pos.x, pos.y);
+        ctx.rotate(angle);
+        
+        // Draw Train Body
+        ctx.fillStyle = this.color;
+        ctx.fillRect(-this.length/2, -this.width/2, this.length, this.width);
+        
+        // Draw Cab indicator
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.fillRect(this.length/4, -this.width/2 + 2, this.length/4 - 2, this.width - 4);
+
+        ctx.restore();
+
+        // Draw ID (non-rotated)
+        ctx.fillStyle = 'white';
+        ctx.font = '10px monospace';
+        ctx.fillText(this.id, pos.x - 5, pos.y - 15);
+
+        // Save position for collision
+        this.x = pos.x;
+        this.y = pos.y;
+    }
+}
+
+class Particle {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 5;
+        this.vy = (Math.random() - 0.5) * 5;
+        this.life = 1.0;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life -= 0.02;
+    }
+    draw(ctx) {
+        ctx.fillStyle = `rgba(255, 100, 50, ${this.life})`;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, 4 * this.life, 0, Math.PI*2);
+        ctx.fill();
+    }
+}
+
+class Game {
+    constructor() {
+        this.canvas = document.getElementById('simCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.nodes = [];
+        this.tracks = [];
+        this.trains = [];
+        this.particles = [];
+        
+        this.isRunning = false;
+        this.score = 0;
+        this.frameCount = 0;
+        
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        
+        // Interactions
+        this.canvas.addEventListener('click', (e) => this.handleClick(e));
+        
+        this.setupNetwork();
+    }
+
+    resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+
+    setupNetwork() {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const cx = w / 2;
+        const cy = h / 2;
+
+        // Define Nodes (Stations & Junctions) - Creates a Figure 8 with a loop
+        this.nodes = [
+            new Node(0, cx - 300, cy - 150, true),  // Top Left Station
+            new Node(1, cx, cy - 200),              // Top Mid
+            new Node(2, cx + 300, cy - 150, true),  // Top Right Station
+            new Node(3, cx + 200, cy),              // Mid Right Junction
+            new Node(4, cx, cy + 200),              // Bottom Mid
+            new Node(5, cx - 200, cy),              // Mid Left Junction
+            new Node(6, cx, cy),                    // Center Cross Junction
+        ];
+
+        // Define Tracks (Connections)
+        const connect = (n1, n2, cpX, cpY) => {
+            const track = new TrackSegment(this.nodes[n1], this.nodes[n2], cpX ? {x: cpX, y: cpY} : null);
+            this.nodes[n1].connections.push(track);
+            this.tracks.push(track);
+        };
+
+        // Outer Loop
+        connect(0, 1);
+        connect(1, 2);
+        connect(2, 3);
+        connect(3, 4);
+        connect(4, 5);
+        connect(5, 0);
+
+        // Cross Tracks (The Danger Zone)
+        connect(1, 6); // Top to Center
+        connect(6, 4); // Center to Bottom
+        connect(5, 6); // Left to Center
+        connect(6, 3); // Center to Right
+        
+        // Reverse paths for complexity
+        connect(6, 1); 
+        connect(3, 2);
+
+        // Add some signals initially open, some closed
+        this.tracks.forEach(t => t.signalOpen = Math.random() > 0.5);
+    }
+
+    spawnTrain() {
+        const spawnNodes = [0, 2, 4]; // Stations
+        const nodeId = spawnNodes[Math.floor(Math.random() * spawnNodes.length)];
+        const startNode = this.nodes[nodeId];
+        
+        // Don't spawn if too crowded at spawn point
+        const crowding = this.trains.some(t => distance(t.x, t.y, startNode.x, startNode.y) < 80);
+        if (crowding) return;
+
+        const colors = ['#58a6ff', '#db61a2', '#d29922', '#a371f7'];
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        
+        this.trains.push(new Train(this.score + 100, startNode, color));
+    }
+
+    start() {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('modal-overlay').classList.add('hidden');
+        document.getElementById('system-status').innerText = 'OPERATIONAL';
+        
+        this.isRunning = true;
+        this.lastTime = performance.now();
+        this.score = 0;
+        this.trains = [];
+        this.spawnTrain();
+        
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    reset() {
+        document.getElementById('game-over-screen').classList.add('hidden');
+        document.getElementById('modal-overlay').classList.add('hidden');
+        this.start();
+    }
+
+    gameOver() {
+        this.isRunning = false;
+        document.getElementById('system-status').innerText = 'CRITICAL FAILURE';
+        document.getElementById('system-status').style.color = '#da3633';
+        document.getElementById('final-score').innerText = Math.floor(this.score);
+        document.getElementById('modal-overlay').classList.remove('hidden');
+        document.getElementById('game-over-screen').classList.remove('hidden');
+    }
+
+    handleClick(e) {
+        if (!this.isRunning) return;
+        
+        const rect = this.canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Check Signal Clicks
+        for (let track of this.tracks) {
+            if (track.signalHitbox) {
+                const d = distance(x, y, track.signalHitbox.x, track.signalHitbox.y);
+                if (d < track.signalHitbox.r) {
+                    track.signalOpen = !track.signalOpen;
+                    return; // Handled
+                }
+            }
+        }
+    }
+
+    checkCollisions() {
+        for (let i = 0; i < this.trains.length; i++) {
+            for (let j = i + 1; j < this.trains.length; j++) {
+                const t1 = this.trains[i];
+                const t2 = this.trains[j];
+                
+                // Simple distance check
+                const dist = distance(t1.x, t1.y, t2.x, t2.y);
+                if (dist < 25) { // Collision threshold
+                    this.createExplosion((t1.x+t2.x)/2, (t1.y+t2.y)/2);
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    createExplosion(x, y) {
+        for(let i=0; i<30; i++) {
+            this.particles.push(new Particle(x, y));
+        }
+    }
+
+    loop(timestamp) {
+        if (!this.isRunning) return;
+
+        const dt = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+
+        // Clear Canvas
+        this.ctx.fillStyle = '#0d1117';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        // Update Score logic
+        this.frameCount++;
+        if (this.frameCount % 60 === 0) this.score += this.trains.length; // More trains = more points
+
+        // Spawn Logic (Increasing difficulty)
+        const spawnRate = Math.max(100, 400 - (this.score / 50));
+        if (this.frameCount % Math.floor(spawnRate) === 0) {
+            this.spawnTrain();
+        }
+
+        // Draw Connections/Tracks
+        this.tracks.forEach(track => track.draw(this.ctx));
+
+        // Update and Draw Trains
+        // Filter out finished trains
+        this.trains = this.trains.filter(t => t.state !== 'FINISHED');
+        
+        this.trains.forEach(train => {
+            train.update(dt);
+            train.draw(this.ctx);
+        });
+
+        // Particles
+        this.particles.forEach((p, index) => {
+            p.update();
+            p.draw(this.ctx);
+            if(p.life <= 0) this.particles.splice(index, 1);
+        });
+
+        // UI Updates
+        document.getElementById('train-count').innerText = this.trains.length;
+        document.getElementById('score-val').innerText = Math.floor(this.score);
+
+        // Check Collisions
+        if (this.checkCollisions()) {
+            setTimeout(() => this.gameOver(), 100); // Small delay to see explosion
+        } else {
+            requestAnimationFrame((t) => this.loop(t));
+        }
+    }
+}
+
+// Initialize
+const game = new Game();
+
+</script>
+</body>
+</html>

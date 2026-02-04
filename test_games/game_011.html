@@ -1,0 +1,623 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hex Territory: Trap & Capture</title>
+    <style>
+        :root {
+            --bg-color: #1a1a2e;
+            --text-color: #e0e0e0;
+            --hex-bg: #2a2a40;
+            --hex-stroke: #16213e;
+            --p1-color: #00d2ff; /* Cyan */
+            --p1-trap: #007799;
+            --p2-color: #ff2a6d; /* Pink/Red */
+            --p2-trap: #990f3d;
+            --highlight: rgba(255, 255, 255, 0.2);
+            --font-main: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: var(--font-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* HUD Styles */
+        #hud {
+            display: flex;
+            justify-content: space-between;
+            width: 90%;
+            max-width: 800px;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 12px;
+            margin-top: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+
+        .player-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .player-card.active {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: currentColor;
+            transform: scale(1.05);
+        }
+
+        .p1 { color: var(--p1-color); }
+        .p2 { color: var(--p2-color); }
+
+        .score { font-size: 2rem; font-weight: bold; }
+        .label { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+        .trap-count { font-size: 0.9rem; margin-top: 5px; opacity: 0.8; }
+
+        /* Controls */
+        #controls {
+            margin: 15px 0;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .action-btn {
+            background: #333;
+            border: 2px solid #555;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: var(--font-main);
+            font-weight: bold;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-btn:hover { background: #444; }
+        
+        .action-btn.selected {
+            background: #eee;
+            color: #111;
+            border-color: #fff;
+        }
+        
+        /* Game Board */
+        #game-container {
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            position: relative;
+        }
+
+        svg {
+            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+        }
+
+        .hex {
+            fill: var(--hex-bg);
+            stroke: var(--hex-stroke);
+            stroke-width: 2px;
+            cursor: pointer;
+            transition: fill 0.2s, transform 0.1s;
+        }
+
+        .hex:hover {
+            fill: #3a3a55; 
+        }
+
+        .hex.p1 { fill: var(--p1-color); }
+        .hex.p2 { fill: var(--p2-color); }
+        
+        /* Visual indicator for own traps (semi-transparent) */
+        .hex.p1-trap-own { fill: var(--p1-trap); stroke: var(--p1-color); stroke-dasharray: 4; }
+        .hex.p2-trap-own { fill: var(--p2-trap); stroke: var(--p2-color); stroke-dasharray: 4; }
+        
+        /* Revealed traps */
+        .hex.p1-trap-revealed { fill: var(--p1-trap); stroke: #fff; stroke-width: 3px; }
+        .hex.p2-trap-revealed { fill: var(--p2-trap); stroke: #fff; stroke-width: 3px; }
+
+        /* Animation classes */
+        @keyframes pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            70% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .hex.captured { animation: pop 0.3s ease-out forwards; }
+
+        /* Modal */
+        #modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 100;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #modal.visible { visibility: visible; opacity: 1; }
+        #modal-content {
+            background: #222;
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
+            border: 2px solid #555;
+        }
+        #modal-msg { font-size: 2rem; margin-bottom: 20px; }
+        #restart-btn {
+            background: var(--p1-color);
+            border: none;
+            padding: 10px 30px;
+            font-size: 1.2rem;
+            color: #000;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        #turn-msg {
+            position: absolute;
+            top: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 2px 4px #000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="hud">
+        <div id="p1-card" class="player-card p1 active">
+            <div class="label">Player 1</div>
+            <div class="score" id="p1-score">0</div>
+            <div class="trap-count">Traps: <span id="p1-traps">3</span></div>
+        </div>
+        <div id="p2-card" class="player-card p2">
+            <div class="label">Player 2</div>
+            <div class="score" id="p2-score">0</div>
+            <div class="trap-count">Traps: <span id="p2-traps">3</span></div>
+        </div>
+    </div>
+
+    <div id="controls">
+        <button id="btn-tile" class="action-btn selected" onclick="setMode('tile')">
+            <span>⬢</span> Place Tile
+        </button>
+        <button id="btn-trap" class="action-btn" onclick="setMode('trap')">
+            <span>⚠️</span> Place Trap
+        </button>
+    </div>
+
+    <div id="turn-msg"></div>
+
+    <div id="game-container">
+        <!-- SVG injected via JS -->
+    </div>
+
+    <div id="modal">
+        <div id="modal-content">
+            <div id="modal-msg">Player 1 Wins!</div>
+            <button id="restart-btn" onclick="initGame()">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Configuration ---
+        const GRID_RADIUS = 4; // Size of the board
+        const HEX_SIZE = 35;   // Pixel size of hexes
+        const MAX_TRAPS = 3;   // Traps per player
+        
+        // --- State ---
+        let state = {
+            grid: new Map(), // Key: "q,r", Value: HexObject
+            currentPlayer: 1, // 1 or 2
+            mode: 'tile', // 'tile' or 'trap'
+            p1Traps: MAX_TRAPS,
+            p2Traps: MAX_TRAPS,
+            gameOver: false,
+            totalHexes: 0
+        };
+
+        // --- Hex Geometry (Axial Coordinates) ---
+        function hexToPixel(q, r) {
+            const x = HEX_SIZE * (3/2 * q);
+            const y = HEX_SIZE * (Math.sqrt(3)/2 * q + Math.sqrt(3) * r);
+            return { x, y };
+        }
+
+        function getHexCorners(x, y) {
+            let points = "";
+            for (let i = 0; i < 6; i++) {
+                const angle_deg = 60 * i;
+                const angle_rad = Math.PI / 180 * angle_deg;
+                const px = x + HEX_SIZE * Math.cos(angle_rad);
+                const py = y + HEX_SIZE * Math.sin(angle_rad);
+                points += `${px},${py} `;
+            }
+            return points;
+        }
+
+        function getNeighbors(q, r) {
+            const directions = [
+                [1, 0], [1, -1], [0, -1],
+                [-1, 0], [-1, 1], [0, 1]
+            ];
+            return directions.map(d => `${q + d[0]},${r + d[1]}`);
+        }
+
+        // --- Initialization ---
+        function initGame() {
+            state = {
+                grid: new Map(),
+                currentPlayer: 1,
+                mode: 'tile',
+                p1Traps: MAX_TRAPS,
+                p2Traps: MAX_TRAPS,
+                gameOver: false,
+                totalHexes: 0
+            };
+
+            document.getElementById('modal').classList.remove('visible');
+            setMode('tile');
+            renderGrid();
+            updateUI();
+        }
+
+        function renderGrid() {
+            const container = document.getElementById('game-container');
+            container.innerHTML = '';
+            
+            // Calculate SVG dimensions
+            const dim = (GRID_RADIUS * 2 + 1) * HEX_SIZE * 2;
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("width", dim);
+            svg.setAttribute("height", dim);
+            svg.setAttribute("viewBox", `-${dim/2} -${dim/2} ${dim} ${dim}`);
+
+            // Generate Hexes
+            for (let q = -GRID_RADIUS; q <= GRID_RADIUS; q++) {
+                let r1 = Math.max(-GRID_RADIUS, -q - GRID_RADIUS);
+                let r2 = Math.min(GRID_RADIUS, -q + GRID_RADIUS);
+                for (let r = r1; r <= r2; r++) {
+                    const key = `${q},${r}`;
+                    state.grid.set(key, {
+                        q, r,
+                        owner: 0, // 0: Empty, 1: P1, 2: P2
+                        type: 'tile', // 'tile' or 'trap'
+                        revealed: false
+                    });
+                    state.totalHexes++;
+
+                    const { x, y } = hexToPixel(q, r);
+                    const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                    polygon.setAttribute("points", getHexCorners(x, y));
+                    polygon.setAttribute("class", "hex");
+                    polygon.setAttribute("data-key", key);
+                    polygon.addEventListener("click", () => handleHexClick(key));
+                    
+                    svg.appendChild(polygon);
+                }
+            }
+            container.appendChild(svg);
+        }
+
+        // --- Game Logic ---
+
+        function handleHexClick(key) {
+            if (state.gameOver) return;
+
+            const hex = state.grid.get(key);
+            if (!hex) return;
+
+            // Cannot click occupied tiles (unless hidden logic applies, but usually UI prevents it)
+            // But here, we can click empty tiles. 
+            // If it's a trap, the owner is not 0, so we check hex.owner.
+            
+            if (hex.owner !== 0) {
+                // If it's a hidden trap owned by the OPPONENT, trigger it? 
+                // Rule: "If a player selects a hex with an opponent's trap"
+                // This implies traps look empty.
+                // In our data model, if it's a trap, owner is set. 
+                // So visually it must look empty to the opponent.
+                
+                if (hex.type === 'trap' && !hex.revealed && hex.owner !== state.currentPlayer) {
+                    triggerTrap(hex);
+                    return;
+                }
+                
+                // Clicking own trap or visible tile does nothing
+                return;
+            }
+
+            // Tile is truly empty
+            if (state.mode === 'trap') {
+                placeTrap(hex);
+            } else {
+                placeTile(hex);
+            }
+        }
+
+        function setMode(mode) {
+            state.mode = mode;
+            document.getElementById('btn-tile').classList.toggle('selected', mode === 'tile');
+            document.getElementById('btn-trap').classList.toggle('selected', mode === 'trap');
+        }
+
+        function placeTrap(hex) {
+            const trapsLeft = state.currentPlayer === 1 ? state.p1Traps : state.p2Traps;
+            
+            if (trapsLeft <= 0) {
+                showToast("No traps left!");
+                return; // Can't place
+            }
+
+            // Place Logic
+            hex.owner = state.currentPlayer;
+            hex.type = 'trap';
+            hex.revealed = false;
+
+            // Deduct
+            if (state.currentPlayer === 1) state.p1Traps--;
+            else state.p2Traps--;
+
+            endTurn();
+        }
+
+        function triggerTrap(hex) {
+            hex.revealed = true;
+            showToast(`IT'S A TRAP! Player ${state.currentPlayer} loses turn.`);
+            
+            // Re-render to show revealed trap
+            updateBoardVisuals();
+            
+            // Current player loses turn, so turn passes to opponent...
+            // AND the opponent gets to go again effectively because current player did nothing productive.
+            // Actually, simply switching turn effectively ends current player's turn.
+            endTurn();
+        }
+
+        function placeTile(hex) {
+            hex.owner = state.currentPlayer;
+            hex.type = 'tile';
+            
+            // Check for captures
+            const capturedCount = checkCapture(hex);
+            if (capturedCount > 0) {
+                showToast(`Captured ${capturedCount} tiles!`);
+            }
+
+            endTurn();
+        }
+
+        // --- Capture Algorithm ---
+        // Definition: "Enclosed opponent tiles".
+        // Logic: 
+        // 1. Identify all Opponent tiles.
+        // 2. Flood fill (BFS) from the "Edge of the Board" (freedom).
+        // 3. Any opponent tile that CANNOT reach the edge through (Empty OR Opponent) paths is captured.
+        // 4. Note: Our own traps act as "walls" to the opponent for connection purposes if revealed? 
+        //    Actually, simpler: Treat current player's tiles (and visible traps) as walls.
+        function checkCapture(lastPlacedHex) {
+            const opponent = state.currentPlayer === 1 ? 2 : 1;
+            const current = state.currentPlayer;
+
+            // Find all opponent tiles
+            let opponentTiles = [];
+            state.grid.forEach(h => {
+                if (h.owner === opponent && h.type === 'tile') {
+                    opponentTiles.push(h);
+                }
+                // Reveal traps that get captured? Maybe. Let's stick to tiles first.
+                // If a hidden trap is surrounded, does it flip? Rule: "converts enclosed opponent tiles".
+                // Usually traps are destroyed or revealed. Let's flip tiles only.
+            });
+
+            if (opponentTiles.length === 0) return 0;
+
+            // Set of safe hex keys (can reach edge)
+            let safeHexes = new Set();
+            let visited = new Set();
+            let queue = [];
+
+            // Add all Edge hexes to queue if they are NOT walls (walls = current player tiles)
+            // A hex is on edge if distance(q,r) == GRID_RADIUS.
+            // Wait, standard flood fill: Start from edge of grid.
+            state.grid.forEach((h, key) => {
+                if (isEdge(h.q, h.r)) {
+                    // Start point for freedom
+                    // If it's owned by Current Player, it blocks the path to infinity.
+                    // If it's Empty or Opponent, it's a path to infinity.
+                    // Note: Hidden traps of Current Player? 
+                    // To the opponent, a hidden trap looks empty. But physically, it's occupied.
+                    // If I surround a hidden trap, do I capture it?
+                    // Let's rely on strictly: "Path to edge via non-current-player-color".
+                    
+                    if (h.owner !== current) {
+                        queue.push(key);
+                        safeHexes.add(key);
+                        visited.add(key);
+                    }
+                }
+            });
+
+            // BFS
+            while (queue.length > 0) {
+                const k = queue.shift();
+                const [q, r] = k.split(',').map(Number);
+                
+                getNeighbors(q, r).forEach(nKey => {
+                    if (state.grid.has(nKey) && !visited.has(nKey)) {
+                        const neighbor = state.grid.get(nKey);
+                        // Can we traverse? Yes if not current player.
+                        if (neighbor.owner !== current) {
+                            visited.add(nKey);
+                            safeHexes.add(nKey);
+                            queue.push(nKey);
+                        }
+                    }
+                });
+            }
+
+            // Any opponent tile NOT in safeHexes is captured
+            let captured = 0;
+            opponentTiles.forEach(h => {
+                const key = `${h.q},${h.r}`;
+                if (!safeHexes.has(key)) {
+                    // Capture!
+                    h.owner = current;
+                    h.capturedAnim = true; // Trigger CSS animation
+                    captured++;
+                }
+            });
+
+            return captured;
+        }
+
+        function isEdge(q, r) {
+            // In hex grid, edge is where coordinate magnitude is max
+            // Distance = (abs(q) + abs(q + r) + abs(r)) / 2
+            return (Math.abs(q) + Math.abs(q + r) + Math.abs(r)) / 2 === GRID_RADIUS;
+        }
+
+        function endTurn() {
+            updateBoardVisuals();
+            checkWinCondition();
+            
+            if (!state.gameOver) {
+                state.currentPlayer = state.currentPlayer === 1 ? 2 : 1;
+                // Default mode back to tile for UX
+                setMode('tile');
+                updateUI();
+            }
+        }
+
+        function checkWinCondition() {
+            let emptyCount = 0;
+            let p1Count = 0;
+            let p2Count = 0;
+
+            state.grid.forEach(h => {
+                if (h.owner === 0) emptyCount++;
+                if (h.owner === 1 && h.type === 'tile') p1Count++;
+                if (h.owner === 2 && h.type === 'tile') p2Count++;
+            });
+
+            // Update scores
+            document.getElementById('p1-score').innerText = p1Count;
+            document.getElementById('p2-score').innerText = p2Count;
+
+            if (emptyCount === 0) {
+                state.gameOver = true;
+                let msg = "";
+                if (p1Count > p2Count) msg = "Player 1 Wins!";
+                else if (p2Count > p1Count) msg = "Player 2 Wins!";
+                else msg = "It's a Draw!";
+                
+                document.getElementById('modal-msg').innerText = msg;
+                document.getElementById('modal').classList.add('visible');
+            }
+        }
+
+        // --- UI Updates ---
+
+        function updateUI() {
+            const p1Card = document.getElementById('p1-card');
+            const p2Card = document.getElementById('p2-card');
+            
+            if (state.currentPlayer === 1) {
+                p1Card.classList.add('active');
+                p2Card.classList.remove('active');
+            } else {
+                p1Card.classList.remove('active');
+                p2Card.classList.add('active');
+            }
+
+            document.getElementById('p1-traps').innerText = state.p1Traps;
+            document.getElementById('p2-traps').innerText = state.p2Traps;
+
+            // Disable trap button if 0
+            const currentTraps = state.currentPlayer === 1 ? state.p1Traps : state.p2Traps;
+            const btnTrap = document.getElementById('btn-trap');
+            if (currentTraps === 0) {
+                btnTrap.style.opacity = '0.5';
+                btnTrap.style.pointerEvents = 'none';
+                if(state.mode === 'trap') setMode('tile');
+            } else {
+                btnTrap.style.opacity = '1';
+                btnTrap.style.pointerEvents = 'auto';
+            }
+        }
+
+        function updateBoardVisuals() {
+            state.grid.forEach((hex, key) => {
+                const el = document.querySelector(`.hex[data-key="${key}"]`);
+                // Remove all old classes
+                el.setAttribute('class', 'hex');
+
+                // Basic Ownership
+                if (hex.owner === 1) {
+                    if (hex.type === 'tile') el.classList.add('p1');
+                    else if (hex.type === 'trap') {
+                        // Reveal logic
+                        if (hex.revealed) el.classList.add('p1-trap-revealed');
+                        else if (state.currentPlayer === 1 && !state.gameOver) el.classList.add('p1-trap-own'); // Only P1 sees their own hidden traps
+                        // If hidden and opponent turn, looks like default hex
+                    }
+                } else if (hex.owner === 2) {
+                    if (hex.type === 'tile') el.classList.add('p2');
+                    else if (hex.type === 'trap') {
+                        if (hex.revealed) el.classList.add('p2-trap-revealed');
+                        else if (state.currentPlayer === 2 && !state.gameOver) el.classList.add('p2-trap-own');
+                    }
+                }
+
+                if (hex.capturedAnim) {
+                    el.classList.add('captured');
+                    hex.capturedAnim = false; // Reset flag
+                }
+            });
+        }
+
+        function showToast(msg) {
+            const el = document.getElementById('turn-msg');
+            el.innerText = msg;
+            el.style.opacity = '1';
+            el.style.top = '20px';
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.top = '10px';
+            }, 2000);
+        }
+
+        // Start Game
+        initGame();
+
+    </script>
+</body>
+</html>
